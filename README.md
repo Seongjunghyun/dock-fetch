@@ -44,9 +44,24 @@ npm install
 npm run dev
 ```
 
-### Build for Production
+### Build for Production (Cross-Platform)
+DockFetch supports building executables for multiple operating systems!
+
 ```bash
+# Build for your current OS (Default)
 npm run build
+
+# Build specifically for macOS (.dmg, .zip)
+npm run build:mac
+
+# Build for Windows (.exe / NSIS)
+npm run build:win
+
+# Build for Linux (.AppImage, .deb)
+npm run build:linux
+
+# Build for ALL platforms (requires proper toolchains)
+npm run build:all
 ```
 
 ## 📸 Screenshots

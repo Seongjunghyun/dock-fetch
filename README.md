@@ -66,11 +66,20 @@ npm run build:all
 
 ## 📸 Screenshots
 
-*(Replace these lines with actual image links)*
+### 1. Search & Details
+_Browsing Docker Hub images and selecting specific tags for extraction._
+<br>
+<img src="assets/search.png" alt="Search and Details view of DockFetch" width="800"/>
 
-1. **Search & Details** - Browsing images and selecting specific tags.
-2. **Recent History** - Viewing download history with `Available` and `Missing` tracking.
-3. **Storage Manager** - Managing physical `.tar` files and quick deletion.
+### 2. Recent History
+_Viewing and managing the download history with smart 'Available' and 'Missing' physical file tracking._
+<br>
+<img src="assets/recent.png" alt="Recent downloads track record" width="800"/>
+
+### 3. Storage Manager
+_A clean interface for natively managing and permanently deleting physical local `.tar` layers._
+<br>
+<img src="assets/storage.png" alt="DockFetch Storage Manager UI" width="800"/>
 
 ## 🛠 Tech Stack
 - **Frontend**: React, Vite, Vanilla CSS, Lucide React Icons

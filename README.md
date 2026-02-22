@@ -16,6 +16,17 @@ DockFetch is a powerful, beautifully designed Electron application that allows y
 
 ## 🚀 Getting Started
 
+### ⚠️ macOS "App is damaged" Error (Gatekeeper)
+Because this is an open-source tool without a paid Apple Developer certificate, macOS Gatekeeper may flag the downloaded `.dmg` or `.app` as "damaged" due to it being unsigned.
+
+**To fix this:**
+1. Open the `.dmg` and drag **DockFetch** into your `Applications` folder.
+2. Open your terminal and run the following command to remove the quarantine flag:
+   ```bash
+   sudo xattr -cr /Applications/DockFetch.app
+   ```
+3. You can now open DockFetch normally from your Launchpad!
+
 ### Prerequisites
 - [Node.js](https://nodejs.org/) (v16 or higher recommended)
 - (Optional) Docker daemon for the "Local Docker" export feature.

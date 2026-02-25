@@ -98,7 +98,8 @@ export async function downloadImageAsTar(
     digest: string,
     token: string,
     outputPath: string,
-    onProgress: (msg: string, percent: number) => void
+    onProgress: (msg: string, percent: number) => void,
+    signal?: AbortSignal
 ) {
     const repository = repo.includes('/') ? repo : `library/${repo}`;
 
@@ -121,7 +122,8 @@ export async function downloadImageAsTar(
 
     const configRes = await axios.get(`${REGISTRY_URL}/${repository}/blobs/${configDigest}`, {
         headers: { Authorization: `Bearer ${token}` },
-        responseType: 'arraybuffer'
+        responseType: 'arraybuffer',
+        signal
     });
 
     const configContent = Buffer.from(configRes.data);
@@ -134,11 +136,10 @@ export async function downloadImageAsTar(
     for (let i = 0; i < layers.length; i++) {
         const layer = layers[i];
         step++;
-        onProgress(`Downloading layer ${i + 1}/${layers.length} (${layer.digest.substring(7, 19)})...`, Math.round((step / totalSteps) * 100));
-
         const layerRes = await axios.get(`${REGISTRY_URL}/${repository}/blobs/${layer.digest}`, {
             headers: { Authorization: `Bearer ${token}` },
-            responseType: 'stream'
+            responseType: 'stream',
+            signal
         });
 
         const layerDir = layer.digest.split(':')[1];
@@ -155,6 +156,18 @@ export async function downloadImageAsTar(
         pack.entry({ name: `${layerDir}/json` }, JSON.stringify(layerJson));
 
         // Add the actual layer blob data
+        const totalLayerSize = parseInt(layerRes.headers['content-length'] || layer.size, 10);
+        let downloadedLayer = 0;
+
+        layerRes.data.on('data', (chunk: Buffer) => {
+            downloadedLayer += chunk.length;
+            const basePct = (step / totalSteps) * 100;
+            const chunkPct = (downloadedLayer / totalLayerSize) * (100 / totalSteps);
+            const mbDownloaded = (downloadedLayer / 1024 / 1024).toFixed(1);
+            const mbTotal = (totalLayerSize / 1024 / 1024).toFixed(1);
+            onProgress(`Layer ${i + 1}/${layers.length}: ${mbDownloaded}MB / ${mbTotal}MB`, Math.min(99, basePct + chunkPct));
+        });
+
         await new Promise<void>((resolve, reject) => {
             const entryStream = pack.entry({ name: layerFilename, size: layer.size }, (err: Error | null | undefined) => {
                 if (err) reject(err);
@@ -166,7 +179,7 @@ export async function downloadImageAsTar(
 
     // 3. Create manifest.json
     step++;
-    onProgress('Building manifest and packaging archive...', Math.round((step / totalSteps) * 100));
+    onProgress('Building archive...', Math.round((step / totalSteps) * 100));
 
     const manifestJson = [{
         Config: configFilename,

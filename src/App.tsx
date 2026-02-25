@@ -1,6 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
-import { Search, Download, Star, FolderOpen, Sun, Moon, Settings, Loader2, X, HardDrive, CheckCircle2, ChevronDown, Package, Heart, History, Trash2 } from 'lucide-react'
-
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { Search, Download, Star, FolderOpen, Sun, Moon, Settings, Loader2, X, HardDrive, CheckCircle2, ChevronDown, Package, Heart, Trash2, Github } from 'lucide-react'
 
 // Helper hooks for LocalStorage
 function useLocalStorage<T>(key: string, initialValue: T): [T, (val: T) => void] {
@@ -36,54 +35,104 @@ function formatNumber(num: number): string {
 
 import './index.css'
 
+// Helper component for Docker Image Logos
+const ImageLogo = ({ repoName, size = 24 }: { repoName: string, size?: number }) => {
+  const [imgError, setImgError] = useState(false);
+  const isOfficial = !repoName.includes('/') || repoName.startsWith('library/');
+  const displayName = repoName.split('/').pop() || repoName;
+
+  // Map common repo names to devicon names
+  const iconNameMap: Record<string, string> = {
+    'node': 'nodejs', 'postgres': 'postgresql', 'golang': 'go', 'httpd': 'apache',
+    'alpine': 'alpinejs', 'nginx': 'nginx', 'redis': 'redis', 'python': 'python',
+    'ubuntu': 'ubuntu', 'mysql': 'mysql', 'mongo': 'mongodb', 'mariadb': 'mariadb',
+    'php': 'php', 'ruby': 'ruby', 'rust': 'rust', 'java': 'java', 'openjdk': 'java',
+    'wordpress': 'wordpress', 'elasticsearch': 'elasticsearch', 'jenkins': 'jenkins',
+    'tomcat': 'tomcat', 'grafana': 'grafana', 'prometheus': 'prometheus', 'vault': 'vault',
+    'maven': 'maven', 'gradle': 'gradle', 'dotnet': 'dot-net', 'dart': 'dart',
+    'flutter': 'flutter', 'elixir': 'elixir', 'erlang': 'erlang', 'haskell': 'haskell',
+    'julia': 'julia', 'perl': 'perl', 'scala': 'scala', 'swift': 'swift',
+    'vue': 'vuejs', 'react': 'react', 'Debian': 'debian', 'centos': 'centos',
+    'amazonlinux': 'amazonwebservices', 'react-native': 'react', 'archlinux': 'archlinux'
+  };
+
+  const deviconName = iconNameMap[displayName] || displayName;
+  // Devicons usually prefer -original, but sometimes -plain
+  const iconUrl = `https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/${deviconName}/${deviconName}-original.svg`;
+
+  if (!imgError) {
+    return (
+      <img
+        src={iconUrl}
+        alt={displayName}
+        style={{ width: size, height: size, objectFit: 'contain', flexShrink: 0 }}
+        onError={(e) => {
+          // Fallback to plain if original fails once, then to initials
+          if (e.currentTarget.src.includes('-original.svg')) {
+            e.currentTarget.src = iconUrl.replace('-original.svg', '-plain.svg');
+          } else {
+            setImgError(true);
+          }
+        }}
+      />
+    );
+  }
+
+  const initial = displayName.charAt(0).toUpperCase();
+
+  return (
+    <div style={{
+      width: size,
+      height: size,
+      borderRadius: 'var(--radius-sm)',
+      background: isOfficial ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
+      color: 'white',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontWeight: 'bold',
+      fontSize: size * 0.5,
+      border: isOfficial ? 'none' : '1px solid var(--border-color)',
+      flexShrink: 0
+    }}>
+      {initial}
+    </div>
+  )
+}
+
+const DockFetchLogo = ({ size = 28 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+    <defs>
+      <linearGradient id="logo-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#3b82f6" />
+        <stop offset="100%" stopColor="#06b6d4" />
+      </linearGradient>
+      <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+        <feGaussianBlur stdDeviation="2" result="blur" />
+        <feComposite in="SourceGraphic" in2="blur" operator="over" />
+      </filter>
+    </defs>
+    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" stroke="url(#logo-gradient)" fill="rgba(59, 130, 246, 0.15)" filter="url(#glow)" />
+    <polyline points="3.27 6.96 12 12.01 20.73 6.96" stroke="url(#logo-gradient)" />
+    <line x1="12" y1="22.08" x2="12" y2="12" stroke="url(#logo-gradient)" />
+  </svg>
+)
+
 function App() {
-  const [activeTab, setActiveTab] = useState<'search' | 'favorites' | 'recent' | 'storage' | 'local' | 'settings'>('search')
+  const [activeTab, setActiveTab] = useState<'favorites' | 'storage' | 'local' | 'settings'>('favorites')
   const [theme, setTheme] = useLocalStorage<'dark' | 'light'>('dockfetch-theme', 'dark')
   const [downloadPath, setDownloadPath] = useLocalStorage<string>('dockfetch-dl-path', '')
   const [favorites, setFavorites] = useLocalStorage<any[]>('dockfetch-favorites', [])
   const [libraryHistory, setLibraryHistory] = useLocalStorage<any[]>('dockfetch-library', [])
+  const [recentSearches, setRecentSearches] = useLocalStorage<any[]>('dockfetch-recent-searches', [])
 
   const [fileExistsMap, setFileExistsMap] = useState<Record<string, boolean>>({})
-
   const defaultTabs = [
-    { id: 'search', label: 'Search', icon: Search },
     { id: 'favorites', label: 'Favorites', icon: Star },
-    { id: 'recent', label: 'Recent', icon: History },
     { id: 'storage', label: 'Storage', icon: Package },
     { id: 'local', label: 'Local Docker', icon: HardDrive },
     { id: 'settings', label: 'Settings', icon: Settings }
   ]
-  const [tabOrder, setTabOrder] = useLocalStorage<string[]>('dockfetch-tab-order', defaultTabs.map(t => t.id))
-
-  const [draggedTab, setDraggedTab] = useState<string | null>(null)
-
-  const handleDragStart = (id: string) => {
-    setDraggedTab(id)
-  }
-
-  const handleDragOver = (e: React.DragEvent, targetId: string) => {
-    e.preventDefault() // Necessary to allow dropping
-    if (!draggedTab || draggedTab === targetId) return
-
-    const currentIndex = tabOrder.indexOf(draggedTab)
-    const targetIndex = tabOrder.indexOf(targetId)
-
-    const newOrder = [...tabOrder]
-    newOrder.splice(currentIndex, 1)
-    newOrder.splice(targetIndex, 0, draggedTab)
-
-    setTabOrder(newOrder)
-  }
-
-  const handleDrop = () => {
-    setDraggedTab(null)
-  }
-
-  // Generate ordered tabs for rendering
-  const synchronizedTabOrder = Array.from(new Set([...tabOrder, ...defaultTabs.map(t => t.id)]))
-  const ordredTabs = Array.from(new Set(synchronizedTabOrder.map(id => id === 'library' ? 'recent' : id)))
-    .map(id => defaultTabs.find(t => t.id === id))
-    .filter(Boolean) as typeof defaultTabs;
 
   useEffect(() => {
     if (theme === 'light') {
@@ -94,8 +143,21 @@ function App() {
   }, [theme])
 
   const [searchQuery, setSearchQuery] = useState('')
+  const [isSearchFocused, setIsSearchFocused] = useState(false)
   const [images, setImages] = useState<any[]>([])
   const [isSearching, setIsSearching] = useState(false)
+
+  const searchContainerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setIsSearchFocused(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   const [selectedImage, setSelectedImage] = useState<any | null>(null)
   const [tags, setTags] = useState<string[]>([])
@@ -104,12 +166,17 @@ function App() {
   const [selectedDigest, setSelectedDigest] = useState('')
 
   const [isFetchingMetadata, setIsFetchingMetadata] = useState(false)
-  const [downloadProgress, setDownloadProgress] = useState<{ msg: string, percent: number, error?: boolean } | null>(null)
+  const [downloadProgress, setDownloadProgress] = useState<{ msg: string; percent?: number; error?: boolean; loading?: boolean } | null>(null)
+  const isDownloadingRef = useRef(false)
   const [downloadComplete, setDownloadComplete] = useState<string | null>(null)
 
   const [localImages, setLocalImages] = useState<any[]>([])
   const [isFetchingLocal, setIsFetchingLocal] = useState(false)
   const [exportProgress, setExportProgress] = useState<{ msg: string } | null>(null)
+  const [deleteProgress, setDeleteProgress] = useState<{ msg: string, loading?: boolean, error?: boolean } | null>(null)
+
+  // Docker Load Progress
+  const [dockerLoadProgress, setDockerLoadProgress] = useState<{ msg: string, loading: boolean } | null>(null)
 
   const [directoryTars, setDirectoryTars] = useState<any[]>([])
 
@@ -133,6 +200,14 @@ function App() {
 
   // Fetch local images when local tab is active
   useEffect(() => {
+    fetchLocalImages(true)
+  }, [])
+
+  useEffect(() => {
+    setSelectedImage(null)
+    setDownloadProgress(null)
+    setDownloadComplete(null)
+
     if (activeTab === 'local') {
       fetchLocalImages()
     }
@@ -157,10 +232,6 @@ function App() {
   }, [activeTab, downloadPath, fetchDirectoryTars])
 
   const handleDeleteFile = async (filePath: string) => {
-    if (!window.confirm(`Are you sure you want to permanently delete this file?\n${filePath}`)) {
-      return
-    }
-
     try {
       // @ts-ignore
       const res = await window.ipcRenderer.invoke('delete-file', filePath)
@@ -176,8 +247,8 @@ function App() {
     }
   }
 
-  const fetchLocalImages = async () => {
-    setIsFetchingLocal(true)
+  const fetchLocalImages = async (silent: boolean = false) => {
+    if (!silent) setIsFetchingLocal(true)
     try {
       // @ts-ignore
       const result = await window.ipcRenderer.invoke('get-local-images')
@@ -185,7 +256,25 @@ function App() {
     } catch (err) {
       console.error(err)
     } finally {
-      setIsFetchingLocal(false)
+      if (!silent) setIsFetchingLocal(false)
+    }
+  }
+
+  const deleteLocalImage = async (img: any) => {
+    const targetImage = img.repo === 'untagged' ? img.id : `${img.repo}:${img.tag}`
+    try {
+      // @ts-ignore
+      const result = await window.ipcRenderer.invoke('delete-local-image', targetImage)
+      if (result && result.success) {
+        setDeleteProgress(null)
+        fetchLocalImages(true)
+      } else {
+        setDeleteProgress({ msg: `Failed to delete: ${result.error}`, error: true, loading: false })
+        setTimeout(() => setDeleteProgress(null), 5000)
+      }
+    } catch (err: any) {
+      setDeleteProgress({ msg: err.message || 'Error deleting local image.', error: true, loading: false })
+      setTimeout(() => setDeleteProgress(null), 5000)
     }
   }
 
@@ -220,12 +309,17 @@ function App() {
   // Listen to search input
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
-      if (searchQuery.trim().length > 2) {
+      if (searchQuery.length > 2) {
         performSearch(searchQuery)
-      } else if (searchQuery.trim().length === 0) {
+      } else {
         setImages([])
+        setSelectedImage(null)
       }
     }, 500)
+
+    if (searchQuery.length > 0) {
+      setSelectedImage(null)
+    }
 
     return () => clearTimeout(delayDebounceFn)
   }, [searchQuery])
@@ -233,7 +327,9 @@ function App() {
   // Listen to IPC download progress
   useEffect(() => {
     const handleProgress = (_: any, data: { msg: string, percent: number }) => {
-      setDownloadProgress({ msg: data.msg, percent: data.percent })
+      if (isDownloadingRef.current) {
+        setDownloadProgress({ msg: data.msg, percent: data.percent })
+      }
     }
 
     // @ts-ignore
@@ -266,7 +362,12 @@ function App() {
     setSelectedDigest('')
     setDownloadProgress(null)
     setDownloadComplete(null)
+    setDockerLoadProgress(null)
     setIsFetchingMetadata(true)
+
+    if (!recentSearches.some((r: any) => r.repo_name === img.repo_name)) {
+      setRecentSearches([img, ...recentSearches].slice(0, 10))
+    }
 
     try {
       // @ts-ignore
@@ -306,12 +407,10 @@ function App() {
     }
   }
 
-  const handleRedownload = (entry: any) => {
-    const img = { repo_name: entry.repo_name, short_description: 'Redownload image', star_count: 0, pull_count: 0 }
-    openImageModal(img, entry.tag)
-  }
+
 
   const triggerDownload = async (repo: string, tag: string, digest: string) => {
+    isDownloadingRef.current = true
     setDownloadProgress({ msg: 'Starting download...', percent: 0 })
     setDownloadComplete(null)
 
@@ -319,7 +418,10 @@ function App() {
       // @ts-ignore
       const filePath = await window.ipcRenderer.invoke('download-image', repo, tag, digest, downloadPath || null)
       if (filePath) {
-        setDownloadComplete(filePath)
+        isDownloadingRef.current = false
+        setDownloadComplete('Download Successfully Completed!')
+        setTimeout(() => setDownloadComplete(null), 3000)
+        setDownloadProgress(null)
         // Add to library history
         const newEntry = {
           repo_name: repo,
@@ -339,10 +441,12 @@ function App() {
         }
       } else {
         // Canceled
+        isDownloadingRef.current = false
         setDownloadProgress(null)
       }
     } catch (err: any) {
       console.error(err)
+      isDownloadingRef.current = false
       setDownloadProgress({ msg: err.message || 'Error: Download failed. Check network or tag validity.', percent: 0, error: true })
     }
   }
@@ -351,6 +455,47 @@ function App() {
     if (!selectedImage || !selectedTag || !selectedDigest) return
     triggerDownload(selectedImage.repo_name, selectedTag, selectedDigest)
   }
+
+  const handleCancelDownload = async () => {
+    if (!selectedImage || !selectedTag) return
+    isDownloadingRef.current = false
+    setDownloadProgress(null)
+    setDockerLoadProgress(null)
+    try {
+      // @ts-ignore
+      await window.ipcRenderer.invoke('cancel-download', selectedImage.repo_name, selectedTag)
+    } catch (err) {
+      console.error('Failed to cancel download', err)
+    }
+  }
+
+  const handleFetchToDocker = async () => {
+    if (!selectedImage || !selectedTag || !selectedDigest) return
+    setDockerLoadProgress({ msg: 'Initializing direct docker load...', loading: true })
+    setDownloadComplete(null)
+
+    try {
+      // We will listen to the same download-progress event, but it's handled in main.ts
+      // @ts-ignore
+      const result = await window.ipcRenderer.invoke('fetch-to-local-docker', selectedImage.repo_name, selectedTag, selectedDigest)
+      if (result && result.success) {
+        setDockerLoadProgress(null)
+        setDownloadProgress(null)
+        setDownloadComplete('Successfully loaded image into local Docker daemon!')
+        setTimeout(() => setDownloadComplete(null), 3000)
+        fetchLocalImages(true)
+      } else {
+        setDockerLoadProgress({ msg: 'Failed to load image', loading: false })
+        setDownloadProgress(null)
+      }
+    } catch (err: any) {
+      console.error(err)
+      setDockerLoadProgress({ msg: err.message || 'Error: Direct load failed.', loading: false })
+      setDownloadProgress(null)
+    }
+  }
+
+
 
   const toggleFavorite = (e: any, img: any) => {
     e.stopPropagation();
@@ -379,465 +524,767 @@ function App() {
     }
   }
 
-  const openPath = async (path: string) => {
-    try {
-      // @ts-ignore
-      await window.ipcRenderer.invoke('open-path', path)
-    } catch (err) {
-      console.error(err)
-    }
-  }
-
   return (
     <div className="app-container">
-      <aside className="sidebar glass">
-        <div className="sidebar-logo">
-          <Package size={28} />
-          <span>DockFetch</span>
-        </div>
-
-        <nav>
-          {ordredTabs.map(tab => (
-            <div
-              key={tab.id}
-              className={`nav-item ${activeTab === tab.id ? 'active' : ''}`}
-              onClick={() => setActiveTab(tab.id as any)}
-              style={{ cursor: 'pointer', opacity: draggedTab === tab.id ? 0.5 : 1 }}
-              draggable
-              onDragStart={() => handleDragStart(tab.id)}
-              onDragOver={(e) => handleDragOver(e, tab.id)}
-              onDrop={handleDrop}
-              onDragEnd={handleDrop}
-            >
-              <tab.icon size={20} />
-              {tab.label}
-            </div>
-          ))}
-        </nav>
-      </aside>
-
-      <main className="main-content">
-        {activeTab === 'search' && (
-          <>
-            <header className="header glass">
-              <div className="search-container">
-                <Search className="search-icon" size={18} />
-                <input
-                  type="text"
-                  className="search-input"
-                  placeholder="Search Docker Hub... (e.g. nginx, alpine)"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </div>
-            </header>
-
-            <div className="content-area">
-              <h2 className="page-title">
-                {searchQuery.length > 2 ? `Search Results for "${searchQuery}"` : 'Docker registry viewer'}
-              </h2>
-
-              {isSearching && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-secondary)' }}>
-                  <Loader2 className="spinner" size={18} />
-                  Searching registry...
-                </div>
-              )}
-
-              {!isSearching && images.length === 0 && searchQuery.length > 2 && (
-                <div style={{ color: 'var(--text-secondary)' }}>No images found.</div>
-              )}
-
-              <div className="image-grid">
-                {images.map((img) => (
-                  <div
-                    key={img.repo_name}
-                    className="image-card glass-panel"
-                    onClick={() => openImageModal(img)}
-                  >
-                    <div className="card-header">
-                      <div>
-                        <h3 className="repo-name">{img.repo_name}</h3>
-                        <p className="repo-desc">{img.short_description}</p>
-                      </div>
-                      <div className="card-icon" onClick={(e) => toggleFavorite(e, img)} style={{ cursor: 'pointer', zIndex: 10 }}>
-                        <Heart size={24} fill={isFavorite(img.repo_name) ? 'var(--accent-primary)' : 'transparent'} color={isFavorite(img.repo_name) ? 'var(--accent-primary)' : 'var(--text-primary)'} />
-                      </div>
-                    </div>
-
-                    <div className="card-stats">
-                      <div className="stat-item">
-                        <Star size={14} />
-                        {formatNumber(img.star_count)}
-                      </div>
-                      <div className="stat-item">
-                        <Download size={14} />
-                        {formatNumber(img.pull_count)}
-                      </div>
-                      {hasAnyDownloadedFile(img.repo_name) && (
-                        <div className="stat-item" style={{ marginLeft: 'auto', color: 'var(--success-color)', background: 'rgba(16, 185, 129, 0.1)', padding: '2px 8px', borderRadius: '12px' }}>
-                          <CheckCircle2 size={12} />
-                          Local
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
-
-        {activeTab === 'favorites' && (
-          <div className="content-area">
-            <h2 className="page-title">My Favorites</h2>
-            {favorites.length === 0 ? (
-              <p style={{ color: 'var(--text-secondary)' }}>No favorites yet. Search and star some repositories!</p>
-            ) : (
-              <div className="image-grid" style={{ marginBottom: '3rem' }}>
-                {favorites.map((img) => (
-                  <div
-                    key={img.repo_name}
-                    className="image-card glass-panel"
-                    onClick={() => openImageModal(img)}
-                  >
-                    <div className="card-header">
-                      <div>
-                        <h3 className="repo-name">{img.repo_name}</h3>
-                        <p className="repo-desc">{img.short_description}</p>
-                      </div>
-                      <div className="card-icon" onClick={(e) => toggleFavorite(e, img)} style={{ cursor: 'pointer' }}>
-                        <Heart size={24} fill="var(--accent-primary)" color="var(--accent-primary)" />
-                      </div>
-                    </div>
-                    <div className="card-stats">
-                      <div className="stat-item">
-                        <Star size={14} />
-                        {formatNumber(img.star_count)}
-                      </div>
-                      <div className="stat-item">
-                        <Download size={14} />
-                        {formatNumber(img.pull_count)}
-                      </div>
-                      {hasAnyDownloadedFile(img.repo_name) && (
-                        <div className="stat-item" style={{ marginLeft: 'auto', color: 'var(--success-color)', background: 'rgba(16, 185, 129, 0.1)', padding: '2px 8px', borderRadius: '12px' }}>
-                          <CheckCircle2 size={12} />
-                          Local
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+      <div className="main-wrapper">
+        <aside className="sidebar glass">
+          <div className="sidebar-logo" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '1.4rem', fontWeight: 800, paddingLeft: '0.5rem', marginBottom: '2.5rem', color: 'var(--text-primary)' }}>
+            <DockFetchLogo size={32} />
+            <span style={{
+              background: 'linear-gradient(45deg, var(--accent-secondary), var(--accent-primary))',
+              WebkitBackgroundClip: 'text',
+              color: 'transparent',
+              letterSpacing: '-0.02em'
+            }}>DockFetch</span>
           </div>
-        )}
+          <nav>
+            {defaultTabs.filter(tab => tab.id !== 'recent').map(tab => (
+              <div
+                key={tab.id}
+                className={`nav-item ${activeTab === tab.id ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveTab(tab.id as any);
+                  setSearchQuery('');
+                  setIsSearchFocused(false);
+                }}
+                style={{ cursor: 'pointer' }}
+              >
+                <tab.icon size={20} />
+                {tab.label}
+              </div>
+            ))}
+          </nav>
+        </aside>
 
-        {activeTab === 'recent' && (
-          <div className="content-area">
-            <h2 className="page-title">Download History</h2>
-            {libraryHistory.length === 0 ? (
-              <p style={{ color: 'var(--text-secondary)' }}>No downloads yet.</p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                {libraryHistory.map((entry, idx) => (
-                  <div key={idx} className="glass-panel" style={{ padding: '1.5rem', borderRadius: 'var(--radius-md)' }}>
-                    <div className="card-header">
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.25rem' }}>
-                          <h3 style={{ fontWeight: 600, fontSize: '1.1rem', margin: 0 }}>{entry.repo_name}:{entry.tag}</h3>
-                          {fileExistsMap[entry.path] ? (
-                            <span style={{ fontSize: '0.75rem', fontWeight: 500, padding: '2px 6px', borderRadius: '4px', background: 'rgba(16, 185, 129, 0.15)', color: 'var(--success-color)', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
-                              Available
-                            </span>
-                          ) : (
-                            <span style={{ fontSize: '0.75rem', fontWeight: 500, padding: '2px 6px', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.15)', color: 'var(--error-color)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
-                              Missing
-                            </span>
+        <main className="main-content">
+          <div style={{ position: 'sticky', top: 0, zIndex: 50, padding: '1rem 2rem', background: 'var(--bg-primary)', display: 'flex', justifyContent: 'center', borderBottom: '1px solid var(--border-color)' }}>
+            <div className="search-container" style={{ width: '100%', maxWidth: 'none', margin: '0' }}>
+              <Search className="search-icon" size={18} />
+              <input
+                type="text"
+                className="search-input"
+                placeholder="Search Docker Hub... (e.g. nginx, alpine)"
+                value={searchQuery}
+                onFocus={() => {
+                  setIsSearchFocused(true)
+                  setSelectedImage(null)
+                }}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{ width: '100%' }}
+              />
+            </div>
+          </div>
+
+          <div ref={searchContainerRef} style={{ display: 'contents' }}>
+            {(searchQuery.length > 0 || isSearchFocused) && (
+              <div className="search-results-overlay">
+
+                <div className="content-area">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                    <h2 className="page-title">
+                      {searchQuery.length > 0
+                        ? (searchQuery.length > 2 ? `Search Results for "${searchQuery}"` : 'Docker registry viewer')
+                        : 'Recent'}
+                    </h2>
+                    {searchQuery.length === 0 && recentSearches.length > 0 && (
+                      <button style={{ background: 'transparent', color: 'var(--text-secondary)', border: 'none', cursor: 'pointer', fontSize: '0.9rem', padding: 0 }} onClick={() => setRecentSearches([])}>
+                        Clear
+                      </button>
+                    )}
+                  </div>
+
+                  {isSearching && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-secondary)' }}>
+                      <Loader2 className="spinner" size={18} />
+                      Searching registry...
+                    </div>
+                  )}
+
+                  {!isSearching && searchQuery.length > 0 && searchQuery.length <= 2 && (
+                    <div style={{ color: 'var(--text-secondary)' }}>Type at least 3 characters to search Docker Hub...</div>
+                  )}
+
+                  {!isSearching && images.length === 0 && searchQuery.length > 2 && (
+                    <div style={{ color: 'var(--text-secondary)' }}>No images found.</div>
+                  )}
+
+                  <div className="image-grid">
+                    {((searchQuery.length > 2 && images.length > 0) ? images : (searchQuery.length === 0 ? recentSearches : [])).map((img) => {
+                      const isLocalTarDownloaded = (repo: string, tag: string) => {
+                        if (!tag) return false;
+                        const safeRepoName = repo.replace(/\//g, '_');
+                        const expectedName = `${safeRepoName}_${tag}.tar`;
+                        const inTars = directoryTars.some(t => t.name === expectedName);
+                        const match = libraryHistory.find(e => e.repo_name === repo && e.tag === tag);
+                        return inTars || !!(match && fileExistsMap[match.path]);
+                      }
+
+                      const isImageInDocker = (repo: string, tag: string) => {
+                        if (!tag) return false;
+                        return localImages.some(localImg => {
+                          const imgName = localImg.repo === 'untagged' ? localImg.id : `${localImg.repo}:${localImg.tag}`;
+                          return imgName === `${repo}:${tag}`;
+                        });
+                      };
+
+                      const tarExists = selectedImage?.repo_name === img.repo_name ? isLocalTarDownloaded(img.repo_name, selectedTag) : false;
+                      const dockerExists = selectedImage?.repo_name === img.repo_name ? isImageInDocker(img.repo_name, selectedTag) : false;
+
+                      return (
+                        <div
+                          key={img.repo_name}
+                          className={`image-card glass-panel ${selectedImage?.repo_name === img.repo_name ? 'expanded' : ''}`}
+                          onClick={() => {
+                            if (selectedImage?.repo_name !== img.repo_name && !downloadProgress) {
+                              openImageModal(img)
+                            }
+                          }}
+                          style={{
+                            cursor: selectedImage?.repo_name === img.repo_name ? 'default' : 'pointer',
+                            border: selectedImage?.repo_name === img.repo_name ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                            boxShadow: selectedImage?.repo_name === img.repo_name ? '0 0 15px rgba(var(--accent-primary-rgb), 0.3)' : 'none'
+                          }}
+                        >
+                          <div className="card-header">
+                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem' }}>
+                              <ImageLogo repoName={img.repo_name} size={40} />
+                              <div>
+                                <h3 className="repo-name" style={{ fontSize: selectedImage?.repo_name === img.repo_name ? '1.2rem' : '1rem' }}>{img.repo_name}</h3>
+                                <p className="repo-desc" style={{ WebkitLineClamp: selectedImage?.repo_name === img.repo_name ? 'unset' : 2 }}>{img.short_description}</p>
+                              </div>
+                            </div>
+                            <div className="card-icon" style={{ background: 'transparent', display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'flex-end', marginLeft: 'auto' }}>
+                              {searchQuery.length === 0 ? (
+                                <>
+                                  <div onClick={(e) => {
+                                    e.stopPropagation();
+                                    setRecentSearches(recentSearches.filter((r: any) => r.repo_name !== img.repo_name))
+                                    if (selectedImage?.repo_name === img.repo_name) setSelectedImage(null);
+                                  }} style={{ cursor: 'pointer', zIndex: 10, color: 'var(--text-secondary)' }} title="Remove from history">
+                                    <X size={18} />
+                                  </div>
+                                  <div onClick={(e) => toggleFavorite(e, img)} style={{ cursor: 'pointer', zIndex: 10 }} title="Add to Favorites">
+                                    <Heart size={18} fill={isFavorite(img.repo_name) ? '#ef4444' : 'transparent'} color={isFavorite(img.repo_name) ? '#ef4444' : 'var(--text-secondary)'} />
+                                  </div>
+                                </>
+                              ) : (
+                                <div onClick={(e) => toggleFavorite(e, img)} style={{ cursor: 'pointer', zIndex: 10 }} title="Add to Favorites">
+                                  <Heart size={18} fill={isFavorite(img.repo_name) ? '#ef4444' : 'transparent'} color={isFavorite(img.repo_name) ? '#ef4444' : 'var(--text-secondary)'} />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="card-stats" style={{ display: 'flex', alignItems: 'center' }}>
+                            <div className="stat-item" style={{ marginRight: '1rem' }}>
+                              <Star size={14} />
+                              {formatNumber(img.star_count)}
+                            </div>
+                            <div className="stat-item">
+                              <Download size={14} />
+                              {formatNumber(img.pull_count)}
+                            </div>
+
+                            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                              {hasAnyDownloadedFile(img.repo_name) && (
+                                <div className="stat-item" style={{ color: 'var(--success-color)', background: 'rgba(16, 185, 129, 0.1)', padding: '2px 8px', borderRadius: '12px' }}>
+                                  <CheckCircle2 size={12} />
+                                  Local
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {selectedImage?.repo_name === img.repo_name && (
+                            <div className="expanded-details" style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-color)' }}>
+                              {isFetchingMetadata ? (
+                                <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                                  <Loader2 className="spinner" size={24} style={{ margin: '0 auto 1rem auto', display: 'block' }} />
+                                  Fetching tags and architectures...
+                                </div>
+                              ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '1rem' }}>
+                                    <div className="control-group" style={{ marginBottom: 0, minWidth: 0 }}>
+                                      <label className="control-label" style={{ fontSize: '0.75rem' }}>Tag / Version</label>
+                                      <div className="select-wrapper">
+                                        <select
+                                          value={selectedTag}
+                                          onChange={(e) => handleTagChange(e.target.value, img.repo_name)}
+                                          disabled={!!downloadProgress}
+                                          style={{ textOverflow: 'ellipsis', paddingRight: '2rem' }}
+                                        >
+                                          {tags.map(t => (
+                                            <option key={t} value={t}>{t}</option>
+                                          ))}
+                                        </select>
+                                        <ChevronDown className="select-arrow" size={16} />
+                                      </div>
+                                    </div>
+                                    <div className="control-group" style={{ marginBottom: 0, minWidth: 0 }}>
+                                      <label className="control-label" style={{ fontSize: '0.75rem' }}>Platform</label>
+                                      <div className="select-wrapper">
+                                        <select
+                                          value={selectedDigest}
+                                          onChange={(e) => setSelectedDigest(e.target.value)}
+                                          disabled={!!downloadProgress || platforms.length === 0}
+                                          style={{ textOverflow: 'ellipsis', paddingRight: '2rem' }}
+                                        >
+                                          {platforms.map(p => (
+                                            <option key={p.digest} value={p.digest}>
+                                              {p.os}/{p.architecture} {p.variant ? `(${p.variant})` : ''}
+                                            </option>
+                                          ))}
+                                        </select>
+                                        <ChevronDown className="select-arrow" size={16} />
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {!downloadProgress && !dockerLoadProgress ? (
+                                    <>
+                                      <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
+                                        <button
+                                          className="btn"
+                                          style={{
+                                            flex: 1,
+                                            background: dockerExists ? 'var(--bg-tertiary)' : 'var(--accent-primary)',
+                                            color: dockerExists ? 'var(--text-secondary)' : 'white',
+                                            cursor: dockerExists ? 'not-allowed' : 'pointer',
+                                            boxShadow: dockerExists ? 'none' : '0 2px 5px rgba(0,0,0,0.2)'
+                                          }}
+                                          onClick={handleFetchToDocker}
+                                          disabled={platforms.length === 0 || dockerExists}
+                                          title={dockerExists ? "This version is already imported in your Local Docker" : "Load this image directly to your Local Docker Daemon"}
+                                        >
+                                          <HardDrive size={16} /> Load
+                                        </button>
+                                        <button
+                                          className="btn"
+                                          style={{
+                                            flex: 1,
+                                            background: tarExists ? 'transparent' : 'rgba(255, 255, 255, 0.1)',
+                                            color: tarExists ? 'var(--text-secondary)' : 'var(--text-primary)',
+                                            border: tarExists ? '1px solid var(--border-color)' : '1px solid rgba(255, 255, 255, 0.2)',
+                                            cursor: tarExists ? 'not-allowed' : 'pointer',
+                                            boxShadow: tarExists ? 'none' : '0 2px 5px rgba(0,0,0,0.2)'
+                                          }}
+                                          onClick={handleDownload}
+                                          disabled={platforms.length === 0 || tarExists}
+                                          title={tarExists ? "This .tar file is already downloaded in Storage" : "Save this image to your computer as a .tar file"}
+                                        >
+                                          <Download size={16} /> Save
+                                        </button>
+                                      </div>
+                                    </>
+                                  ) : downloadProgress?.error ? (
+                                    <>
+                                      <div style={{ textAlign: 'center', color: 'var(--error-color)', padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: 'var(--radius-md)', marginTop: '0.5rem' }}>
+                                        <X size={24} style={{ margin: '0 auto 0.5rem auto' }} />
+                                        <p style={{ fontWeight: 500, fontSize: '0.9rem', marginBottom: '0.25rem' }}>Download Failed</p>
+                                        <p style={{ fontSize: '0.75rem', marginBottom: '1rem' }}>{downloadProgress.msg}</p>
+                                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                          <button className="btn" style={{ flex: 1, padding: '0.5rem' }} onClick={() => setDownloadProgress(null)}>Dismiss</button>
+                                          <button className="btn" style={{ flex: 1, padding: '0.5rem', background: 'var(--accent-primary)', color: 'white' }} onClick={handleDownload}>Retry</button>
+                                        </div>
+                                      </div>
+                                    </>
+                                  ) : dockerLoadProgress ? (
+                                    <>
+                                      <div className="progress-container" style={{ margin: '0.5rem 0' }}>
+                                        <div className="progress-header" style={{ fontSize: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '0.5rem', paddingRight: '0.5rem', minWidth: 0, color: dockerLoadProgress.loading ? 'var(--text-primary)' : (dockerLoadProgress.msg.includes('Failed') ? 'var(--error-color)' : 'var(--success-color)') }}>
+                                            {dockerLoadProgress.loading ? <Loader2 className="spinner" size={14} color="var(--accent-primary)" /> : (dockerLoadProgress.msg.includes('Failed') ? <X size={14} /> : <CheckCircle2 size={14} />)}
+                                            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dockerLoadProgress.msg}</span>
+                                          </div>
+                                          <button
+                                            onClick={() => {
+                                              handleCancelDownload()
+                                              setDockerLoadProgress(null)
+                                            }}
+                                            style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center', flexShrink: 0 }}
+                                            title="Dismiss"
+                                          >
+                                            <X size={14} />
+                                          </button>
+                                        </div>
+                                        {dockerLoadProgress.loading && (
+                                          <div className="progress-bar-bg" style={{ height: '4px' }}>
+                                            <div className="progress-bar-fill" style={{ width: '100%' }}></div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <div className="progress-container" style={{ margin: '0.5rem 0' }}>
+                                        <div className="progress-header" style={{ fontSize: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                          <div style={{ flex: 1, display: 'flex', justifyContent: 'space-between', paddingRight: '0.5rem', minWidth: 0 }}>
+                                            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{downloadProgress?.msg}</span>
+                                            <span style={{ flexShrink: 0, paddingLeft: '0.5rem' }}>{Math.round(downloadProgress?.percent || 0)}%</span>
+                                          </div>
+                                          <button
+                                            onClick={handleCancelDownload}
+                                            style={{ background: 'none', border: 'none', color: 'var(--error-color)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+                                            title="Cancel Download"
+                                          >
+                                            <X size={14} />
+                                          </button>
+                                        </div>
+                                        <div className="progress-bar-bg" style={{ height: '4px' }}>
+                                          <div className="progress-bar-fill" style={{ width: `${downloadProgress?.percent}%` }}></div>
+                                        </div>
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           )}
                         </div>
-                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{new Date(entry.date).toLocaleString()} • {entry.digest?.substring(0, 19)}</p>
-                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginTop: '0.25rem', opacity: 0.7, wordBreak: 'break-all', paddingRight: '2rem' }}>{entry.path}</p>
-                      </div>
-                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                        {fileExistsMap[entry.path] ? (
-                          <div
-                            className="card-icon"
-                            style={{ cursor: 'pointer' }}
-                            onClick={() => openPath(entry.path)}
-                            title="Open downloaded folder"
-                          >
-                            <FolderOpen size={20} color="var(--text-primary)" />
-                          </div>
-                        ) : (
-                          <div
-                            className="card-icon"
-                            style={{ cursor: 'pointer', background: 'var(--accent-primary)' }}
-                            onClick={() => handleRedownload(entry)}
-                            title="Download again"
-                          >
-                            <Download size={20} color="white" />
-                          </div>
-                        )}
-                        <div
-                          className="card-icon"
-                          style={{ cursor: 'pointer' }}
-                          onClick={() => setLibraryHistory(libraryHistory.filter((_, i) => i !== idx))}
-                          title="Remove record"
-                        >
-                          <X size={20} color="var(--text-secondary)" />
-                        </div>
-                      </div>
-                    </div>
+                      )
+                    })}
                   </div>
-                ))}
+                </div>
               </div>
             )}
           </div>
-        )}
 
-        {activeTab === 'storage' && (
-          <div className="content-area">
-            <h2 className="page-title">Files in Storage</h2>
-            {!downloadPath ? (
-              <div className="glass-panel" style={{ padding: '2rem', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
-                <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>No default download directory is set.</p>
-                <button className="btn" style={{ background: 'var(--accent-primary)', color: 'white', display: 'inline-flex', width: 'auto', padding: '0.5rem 1.5rem' }} onClick={() => setActiveTab('settings')}>
-                  Go to Settings
-                </button>
+          {activeTab === 'favorites' && (
+            <div className="content-area">
+              <h2 className="page-title">My Favorites</h2>
+              {favorites.length === 0 ? (
+                <p style={{ color: 'var(--text-secondary)' }}>No favorites yet. Search and star some repositories!</p>
+              ) : (
+                <div className="image-grid" style={{ marginBottom: '3rem' }}>
+                  {favorites.map((img) => {
+                    const isLocalTarDownloaded = (repo: string, tag: string) => {
+                      if (!tag) return false;
+                      const safeRepoName = repo.replace(/\//g, '_');
+                      const expectedName = `${safeRepoName}_${tag}.tar`;
+                      const inTars = directoryTars.some(t => t.name === expectedName);
+                      const match = libraryHistory.find(e => e.repo_name === repo && e.tag === tag);
+                      return inTars || !!(match && fileExistsMap[match.path]);
+                    }
+
+                    const isImageInDocker = (repo: string, tag: string) => {
+                      if (!tag) return false;
+                      return localImages.some(localImg => {
+                        const imgName = localImg.repo === 'untagged' ? localImg.id : `${localImg.repo}:${localImg.tag}`;
+                        return imgName === `${repo}:${tag}`;
+                      });
+                    };
+
+                    const tarExists = selectedImage?.repo_name === img.repo_name ? isLocalTarDownloaded(img.repo_name, selectedTag) : false;
+                    const dockerExists = selectedImage?.repo_name === img.repo_name ? isImageInDocker(img.repo_name, selectedTag) : false;
+
+                    return (
+                      <div
+                        key={img.repo_name}
+                        className={`image-card glass-panel ${selectedImage?.repo_name === img.repo_name ? 'expanded' : ''}`}
+                        onClick={() => {
+                          if (selectedImage?.repo_name !== img.repo_name && !downloadProgress) {
+                            openImageModal(img)
+                          }
+                        }}
+                        style={{
+                          cursor: selectedImage?.repo_name === img.repo_name ? 'default' : 'pointer',
+                          border: selectedImage?.repo_name === img.repo_name ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                          boxShadow: selectedImage?.repo_name === img.repo_name ? '0 0 15px rgba(var(--accent-primary-rgb), 0.3)' : 'none'
+                        }}
+                      >
+                        <div className="card-header">
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem' }}>
+                            <ImageLogo repoName={img.repo_name} size={40} />
+                            <div>
+                              <h3 className="repo-name" style={{ fontSize: selectedImage?.repo_name === img.repo_name ? '1.2rem' : '1rem' }}>{img.repo_name}</h3>
+                              <p className="repo-desc" style={{ WebkitLineClamp: selectedImage?.repo_name === img.repo_name ? 'unset' : 2 }}>{img.short_description}</p>
+                            </div>
+                          </div>
+                          <div className="card-icon" style={{ background: 'transparent', display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'flex-end', marginLeft: 'auto' }}>
+                            <div onClick={(e) => toggleFavorite(e, img)} style={{ cursor: 'pointer', zIndex: 10 }} title="Remove from Favorites">
+                              <Heart size={18} fill="#ef4444" color="#ef4444" />
+                            </div>
+                          </div>
+                        </div>
+                        <div className="card-stats" style={{ display: 'flex', alignItems: 'center' }}>
+                          <div className="stat-item" style={{ marginRight: '1rem' }}>
+                            <Star size={14} />
+                            {formatNumber(img.star_count)}
+                          </div>
+                          <div className="stat-item">
+                            <Download size={14} />
+                            {formatNumber(img.pull_count)}
+                          </div>
+                          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                            {hasAnyDownloadedFile(img.repo_name) && (
+                              <div className="stat-item" style={{ color: 'var(--success-color)', background: 'rgba(16, 185, 129, 0.1)', padding: '2px 8px', borderRadius: '12px' }}>
+                                <CheckCircle2 size={12} />
+                                Local
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {selectedImage?.repo_name === img.repo_name && (
+                          <div className="expanded-details" style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-color)' }}>
+                            {isFetchingMetadata ? (
+                              <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                                <Loader2 className="spinner" size={24} style={{ margin: '0 auto 1rem auto', display: 'block' }} />
+                                Fetching tags and architectures...
+                              </div>
+                            ) : (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '1rem' }}>
+                                  <div className="control-group" style={{ marginBottom: 0, minWidth: 0 }}>
+                                    <label className="control-label" style={{ fontSize: '0.75rem' }}>Tag / Version</label>
+                                    <div className="select-wrapper">
+                                      <select
+                                        value={selectedTag}
+                                        onChange={(e) => handleTagChange(e.target.value, img.repo_name)}
+                                        disabled={!!downloadProgress}
+                                        style={{ textOverflow: 'ellipsis', paddingRight: '2rem' }}
+                                      >
+                                        {tags.map(t => (
+                                          <option key={t} value={t}>{t}</option>
+                                        ))}
+                                      </select>
+                                      <ChevronDown className="select-arrow" size={16} />
+                                    </div>
+                                  </div>
+                                  <div className="control-group" style={{ marginBottom: 0, minWidth: 0 }}>
+                                    <label className="control-label" style={{ fontSize: '0.75rem' }}>Platform</label>
+                                    <div className="select-wrapper">
+                                      <select
+                                        value={selectedDigest}
+                                        onChange={(e) => setSelectedDigest(e.target.value)}
+                                        disabled={!!downloadProgress || platforms.length === 0}
+                                        style={{ textOverflow: 'ellipsis', paddingRight: '2rem' }}
+                                      >
+                                        {platforms.map(p => (
+                                          <option key={p.digest} value={p.digest}>
+                                            {p.os}/{p.architecture} {p.variant ? `(${p.variant})` : ''}
+                                          </option>
+                                        ))}
+                                      </select>
+                                      <ChevronDown className="select-arrow" size={16} />
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {!downloadProgress && !dockerLoadProgress ? (
+                                  <>
+                                    <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
+                                      <button
+                                        className="btn"
+                                        style={{
+                                          flex: 1,
+                                          background: dockerExists ? 'var(--bg-tertiary)' : 'var(--accent-primary)',
+                                          color: dockerExists ? 'var(--text-secondary)' : 'white',
+                                          cursor: dockerExists ? 'not-allowed' : 'pointer',
+                                          boxShadow: dockerExists ? 'none' : '0 2px 5px rgba(0,0,0,0.2)'
+                                        }}
+                                        onClick={handleFetchToDocker}
+                                        disabled={platforms.length === 0 || dockerExists}
+                                        title={dockerExists ? "This version is already imported in your Local Docker" : "Load this image directly to your Local Docker Daemon"}
+                                      >
+                                        <HardDrive size={16} style={{ marginRight: '0.5rem' }} /> Load
+                                      </button>
+                                      <button
+                                        className="btn"
+                                        style={{
+                                          flex: 1,
+                                          background: tarExists ? 'transparent' : 'rgba(255, 255, 255, 0.1)',
+                                          color: tarExists ? 'var(--text-secondary)' : 'var(--text-primary)',
+                                          border: tarExists ? '1px solid var(--border-color)' : '1px solid rgba(255, 255, 255, 0.2)',
+                                          cursor: tarExists ? 'not-allowed' : 'pointer',
+                                          boxShadow: tarExists ? 'none' : '0 2px 5px rgba(0,0,0,0.2)'
+                                        }}
+                                        onClick={handleDownload}
+                                        disabled={platforms.length === 0 || tarExists}
+                                        title={tarExists ? "This .tar file is already downloaded in Storage" : "Save this image to your computer as a .tar file"}
+                                      >
+                                        <Download size={16} style={{ marginRight: '0.5rem' }} /> Save
+                                      </button>
+                                    </div>
+                                  </>
+                                ) : downloadProgress?.error ? (
+                                  <>
+                                    <div style={{ textAlign: 'center', color: 'var(--error-color)', padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: 'var(--radius-md)', marginTop: '0.5rem' }}>
+                                      <X size={24} style={{ margin: '0 auto 0.5rem auto' }} />
+                                      <p style={{ fontWeight: 500, fontSize: '0.9rem', marginBottom: '0.25rem' }}>Download Failed</p>
+                                      <p style={{ fontSize: '0.75rem', marginBottom: '1rem' }}>{downloadProgress.msg}</p>
+                                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                        <button className="btn" style={{ flex: 1, padding: '0.5rem' }} onClick={() => setDownloadProgress(null)}>Dismiss</button>
+                                        <button className="btn" style={{ flex: 1, padding: '0.5rem', background: 'var(--accent-primary)', color: 'white' }} onClick={handleDownload}>Retry</button>
+                                      </div>
+                                    </div>
+                                  </>
+                                ) : dockerLoadProgress ? (
+                                  <>
+                                    <div className="progress-container" style={{ margin: '0.5rem 0' }}>
+                                      <div className="progress-header" style={{ fontSize: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '0.5rem', paddingRight: '0.5rem', minWidth: 0, color: dockerLoadProgress.loading ? 'var(--text-primary)' : (dockerLoadProgress.msg.includes('Failed') ? 'var(--error-color)' : 'var(--success-color)') }}>
+                                          {dockerLoadProgress.loading ? <Loader2 className="spinner" size={14} color="var(--accent-primary)" /> : (dockerLoadProgress.msg.includes('Failed') ? <X size={14} /> : <CheckCircle2 size={14} />)}
+                                          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dockerLoadProgress.msg}</span>
+                                        </div>
+                                        <button
+                                          onClick={() => {
+                                            handleCancelDownload()
+                                            setDockerLoadProgress(null)
+                                          }}
+                                          style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center', flexShrink: 0 }}
+                                          title="Dismiss"
+                                        >
+                                          <X size={14} />
+                                        </button>
+                                      </div>
+                                      {dockerLoadProgress.loading && (
+                                        <div className="progress-bar-bg" style={{ height: '4px' }}>
+                                          <div className="progress-bar-fill" style={{ width: '100%' }}></div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </>
+                                ) : (
+                                  <>
+                                    <div className="progress-container" style={{ margin: '0.5rem 0' }}>
+                                      <div className="progress-header" style={{ fontSize: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div style={{ flex: 1, display: 'flex', justifyContent: 'space-between', paddingRight: '0.5rem', minWidth: 0 }}>
+                                          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{downloadProgress?.msg}</span>
+                                          <span style={{ flexShrink: 0, paddingLeft: '0.5rem' }}>{Math.round(downloadProgress?.percent || 0)}%</span>
+                                        </div>
+                                        <button
+                                          onClick={handleCancelDownload}
+                                          style={{ background: 'none', border: 'none', color: 'var(--error-color)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+                                          title="Cancel Download"
+                                        >
+                                          <X size={14} />
+                                        </button>
+                                      </div>
+                                      <div className="progress-bar-bg" style={{ height: '4px' }}>
+                                        <div className="progress-bar-fill" style={{ width: `${downloadProgress?.percent}%` }}></div>
+                                      </div>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+          {activeTab === 'storage' && (
+            <div className="content-area">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+                <h2 className="page-title" style={{ marginBottom: 0 }}>Files in Storage</h2>
+                {downloadPath && (
+                  <button className="btn" style={{ width: 'auto', padding: '0.5rem 1rem', background: 'var(--bg-tertiary)', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }} onClick={() => {
+                    // @ts-ignore
+                    window.ipcRenderer.invoke('open-path', downloadPath)
+                  }}>
+                    <FolderOpen size={16} /> Open in Finder
+                  </button>
+                )}
               </div>
-            ) : (
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                  <p style={{ color: 'var(--text-secondary)', margin: 0 }}>Showing files in: {downloadPath}</p>
-                  <button className="btn" style={{ width: 'auto', padding: '0.5rem 1rem', background: 'var(--bg-tertiary)', color: 'var(--text-primary)' }} onClick={() => openPath(downloadPath)}>
-                    <FolderOpen size={16} /> Open Directory
+              {!downloadPath ? (
+                <div className="glass-panel" style={{ padding: '2rem', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
+                  <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>No default download directory is set.</p>
+                  <button className="btn" style={{ background: 'var(--accent-primary)', color: 'white', display: 'inline-flex', width: 'auto', padding: '0.5rem 1.5rem' }} onClick={() => setActiveTab('settings')}>
+                    Go to Settings
                   </button>
                 </div>
-                {directoryTars.length === 0 ? (
-                  <p style={{ color: 'var(--text-secondary)' }}>No .tar images found in your default download directory.</p>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    {directoryTars.map((file, idx) => (
-                      <div key={idx} className="glass-panel" style={{ padding: '1rem', borderRadius: 'var(--radius-sm)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <Package size={16} color="var(--accent-primary)" />
-                            <h3 style={{ fontWeight: 500, fontSize: '0.95rem', margin: 0 }}>{file.name}</h3>
+              ) : (
+                <div>
+                  {directoryTars.length === 0 ? (
+                    <p style={{ color: 'var(--text-secondary)' }}>No .tar images found in your default download directory.</p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      {directoryTars.map((file, idx) => {
+                        const match = libraryHistory.find(e => file.path === e.path);
+                        const parts = file.name.replace('.tar', '').split('_');
+                        const repoName = match ? match.repo_name : (parts.length >= 3 ? parts[1] : parts[0]);
+                        return (
+                          <div key={idx} className="glass-panel" style={{ padding: '1rem 1.5rem', borderRadius: 'var(--radius-md)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', padding: '0.25rem 0' }}>
+                              <div style={{ width: '40px', height: '40px', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '1rem', flexShrink: 0 }}>
+                                <ImageLogo repoName={repoName} size={24} />
+                              </div>
+                              <div>
+                                <h3 style={{ fontWeight: 600, fontSize: '1rem', margin: '0 0 0.25rem 0' }}>{file.name}</h3>
+                                <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: 0 }}>
+                                  Size: {formatNumber(file.size)} Bytes • Modified: {new Date(file.modified).toLocaleString()}
+                                </p>
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', height: '100%' }}>
+                              <div
+                                className="card-icon"
+                                style={{ cursor: 'pointer' }}
+                                onClick={() => handleDeleteFile(file.path)}
+                                title="Delete file permanently"
+                              >
+                                <Trash2 size={20} color="var(--error-color)" />
+                              </div>
+                            </div>
                           </div>
-                          <p style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginTop: '0.25rem', marginLeft: '1.5rem' }}>
-                            {formatNumber(file.size)} Bytes • {new Date(file.modified).toLocaleString()}
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'local' && (
+            <div className="content-area">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+                <h2 className="page-title" style={{ marginBottom: 0 }}>Local Docker Images</h2>
+                <button className="btn" style={{ width: 'auto', padding: '0.5rem 1rem', background: 'var(--bg-tertiary)', color: 'var(--text-primary)' }} onClick={() => fetchLocalImages()}>
+                  Refresh
+                </button>
+              </div>
+
+              {exportProgress && (
+                <div className="glass-panel" style={{ padding: '1rem', marginBottom: '1.5rem', borderRadius: 'var(--radius-md)', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Loader2 className="spinner" size={16} /> {exportProgress.msg}
+                </div>
+              )}
+
+              {deleteProgress && (
+                <div className="glass-panel" style={{ padding: '1rem', marginBottom: '1.5rem', borderRadius: 'var(--radius-md)', color: deleteProgress.error ? 'var(--error-color)' : (deleteProgress.loading ? 'var(--accent-primary)' : 'var(--success-color)'), display: 'flex', alignItems: 'center', gap: '0.5rem', border: `1px solid ${deleteProgress.error ? 'var(--error-color)' : (deleteProgress.loading ? 'var(--accent-primary)' : 'var(--success-color)')}` }}>
+                  {deleteProgress.loading ? <Loader2 className="spinner" size={16} /> : (deleteProgress.error ? <X size={16} /> : <CheckCircle2 size={16} />)} {deleteProgress.msg}
+                </div>
+              )}
+
+              {isFetchingLocal ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-secondary)' }}>
+                  <Loader2 className="spinner" size={18} />
+                  Fetching local images...
+                </div>
+              ) : localImages.length === 0 ? (
+                <p style={{ color: 'var(--text-secondary)' }}>No local images found or Docker is not running.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {localImages.map((img, idx) => (
+                    <div key={idx} className="glass-panel" style={{ padding: '1rem 1.5rem', borderRadius: 'var(--radius-md)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', padding: '0.25rem 0' }}>
+                        <div style={{ width: '40px', height: '40px', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '1rem', flexShrink: 0 }}>
+                          <ImageLogo repoName={img.repo} size={24} />
+                        </div>
+                        <div>
+                          <h3 style={{ fontWeight: 600, fontSize: '1rem', margin: '0 0 0.25rem 0' }}>{img.repo}:{img.tag}</h3>
+                          <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: 0 }}>
+                            ID: {img.id} • Size: {img.size} • Created: {img.created}
                           </p>
                         </div>
-                        <div
-                          className="card-icon"
-                          style={{ cursor: 'pointer' }}
-                          onClick={() => handleDeleteFile(file.path)}
-                          title="Delete file permanently"
-                        >
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', height: '100%' }}>
+                        <div className="card-icon" style={{ cursor: exportProgress ? 'not-allowed' : 'pointer', opacity: exportProgress ? 0.5 : 1, pointerEvents: exportProgress ? 'none' : 'auto' }} onClick={() => exportLocalImage(img)} title="Export to .tar">
+                          <Download size={20} />
+                        </div>
+                        <div className="card-icon" style={{ cursor: 'pointer' }} onClick={() => deleteLocalImage(img)} title="Delete Image">
                           <Trash2 size={20} color="var(--error-color)" />
                         </div>
                       </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === 'local' && (
-          <div className="content-area">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-              <h2 className="page-title" style={{ marginBottom: 0 }}>Local Docker Images</h2>
-              <button className="btn" style={{ width: 'auto', padding: '0.5rem 1rem', background: 'var(--bg-tertiary)', color: 'var(--text-primary)' }} onClick={fetchLocalImages}>
-                Refresh
-              </button>
-            </div>
-
-            {exportProgress && (
-              <div className="glass-panel" style={{ padding: '1rem', marginBottom: '1.5rem', borderRadius: 'var(--radius-md)', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Loader2 className="spinner" size={16} /> {exportProgress.msg}
-              </div>
-            )}
-
-            {isFetchingLocal ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-secondary)' }}>
-                <Loader2 className="spinner" size={18} />
-                Fetching local images...
-              </div>
-            ) : localImages.length === 0 ? (
-              <p style={{ color: 'var(--text-secondary)' }}>No local images found or Docker is not running.</p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                {localImages.map((img, idx) => (
-                  <div key={idx} className="glass-panel" style={{ padding: '1.5rem', borderRadius: 'var(--radius-md)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <h3 style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '0.25rem' }}>{img.repo}:{img.tag}</h3>
-                      <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>ID: {img.id} • Size: {img.size} • Created: {img.created}</p>
                     </div>
-                    <div style={{ display: 'flex', gap: '0.75rem' }}>
-                      <button className="btn" disabled={!!exportProgress} style={{ padding: '0.5rem 1rem' }} onClick={() => exportLocalImage(img)}>
-                        <Download size={16} /> Export to .tar
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === 'settings' && (
-          <div className="content-area">
-            <h2 className="page-title">Settings</h2>
-
-            <div className="glass-panel" style={{ padding: '2rem', borderRadius: 'var(--radius-md)', marginBottom: '1.5rem' }}>
-              <h3 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Settings size={20} /> Application Settings</h3>
-
-              <div className="control-group">
-                <label className="control-label">UI Theme</label>
-                <div style={{ display: 'flex', gap: '1rem' }}>
-                  <button
-                    className="btn"
-                    style={{ background: theme === 'dark' ? 'var(--accent-primary)' : 'var(--bg-tertiary)', color: theme === 'dark' ? 'white' : 'var(--text-primary)' }}
-                    onClick={() => setTheme('dark')}
-                  >
-                    <Moon size={18} /> Dark
-                  </button>
-                  <button
-                    className="btn"
-                    style={{ background: theme === 'light' ? 'var(--accent-primary)' : 'var(--bg-tertiary)', color: theme === 'light' ? 'white' : 'var(--text-primary)' }}
-                    onClick={() => setTheme('light')}
-                  >
-                    <Sun size={18} /> Light
-                  </button>
+                  ))}
                 </div>
-              </div>
-
-              <div className="control-group" style={{ marginTop: '2rem' }}>
-                <label className="control-label">Default Download Directory</label>
-                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                  <input
-                    type="text"
-                    className="text-input"
-                    readOnly
-                    value={downloadPath || 'Ask every time'}
-                    style={{ flex: 1 }}
-                  />
-                  <button className="btn" style={{ width: 'auto', background: 'var(--bg-tertiary)', color: 'var(--text-primary)' }} onClick={selectDirectory}>
-                    <FolderOpen size={18} /> Browse...
-                  </button>
-                  {downloadPath && (
-                    <button className="btn" style={{ width: 'auto', background: 'var(--bg-tertiary)', color: 'var(--error-color)' }} onClick={() => setDownloadPath('')}>
-                      <X size={18} /> Clear
-                    </button>
-                  )}
-                </div>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', marginTop: '0.5rem' }}>
-                  If set, images will be automatically downloaded here without prompting.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-      </main>
-
-      {/* Download Modal */}
-      {selectedImage && (
-        <div className="modal-overlay" onClick={() => !downloadProgress && setSelectedImage(null)}>
-          <div className="modal-content glass-panel" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2 className="repo-name">{selectedImage.repo_name}</h2>
-              {!downloadProgress && (
-                <button className="modal-close" onClick={() => setSelectedImage(null)}>
-                  <X size={20} />
-                </button>
               )}
             </div>
+          )}
 
-            {isFetchingMetadata ? (
-              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                <Loader2 className="spinner" size={24} style={{ margin: '0 auto 1rem auto', display: 'block' }} />
-                Fetching tags and architectures...
-              </div>
-            ) : (
-              <>
-                <div className="control-group">
-                  <label className="control-label">Tag / Version</label>
-                  <div className="select-wrapper">
-                    <select
-                      value={selectedTag}
-                      onChange={(e) => handleTagChange(e.target.value, selectedImage.repo_name)}
-                      disabled={!!downloadProgress}
-                    >
-                      {tags.map(t => (
-                        <option key={t} value={t}>{t}</option>
-                      ))}
-                    </select>
-                    <ChevronDown className="select-arrow" size={16} />
-                  </div>
-                </div>
+          {activeTab === 'settings' && (
+            <div className="content-area">
+              <h2 className="page-title">Settings</h2>
+
+              <div className="glass-panel" style={{ padding: '2rem', borderRadius: 'var(--radius-md)', marginBottom: '1.5rem' }}>
+                <h3 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Settings size={20} /> Application Settings</h3>
 
                 <div className="control-group">
-                  <label className="control-label">Platform / Architecture</label>
-                  <div className="select-wrapper">
-                    <select
-                      value={selectedDigest}
-                      onChange={(e) => setSelectedDigest(e.target.value)}
-                      disabled={!!downloadProgress || platforms.length === 0}
+                  <label className="control-label">UI Theme</label>
+                  <div style={{ display: 'flex', gap: '1rem' }}>
+                    <button
+                      className="btn"
+                      style={{ background: theme === 'dark' ? 'var(--accent-primary)' : 'var(--bg-tertiary)', color: theme === 'dark' ? 'white' : 'var(--text-primary)' }}
+                      onClick={() => setTheme('dark')}
                     >
-                      {platforms.map(p => (
-                        <option key={p.digest} value={p.digest}>
-                          {p.os}/{p.architecture} {p.variant ? `(${p.variant})` : ''}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown className="select-arrow" size={16} />
-                  </div>
-                </div>
-
-                {!downloadProgress && !downloadComplete ? (
-                  <button className="btn" onClick={handleDownload} disabled={platforms.length === 0}>
-                    <Download size={18} />
-                    Download Image (.tar)
-                  </button>
-                ) : downloadComplete ? (
-                  <div style={{ textAlign: 'center', color: 'var(--success-color)', padding: '1rem' }}>
-                    <CheckCircle2 size={32} style={{ margin: '0 auto 0.5rem auto' }} />
-                    <p style={{ fontWeight: 500, marginBottom: '1rem' }}>Download Complete!</p>
-                    <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Saved to: {downloadComplete}</p>
-                    <button className="btn" style={{ marginTop: '1rem', background: 'var(--bg-tertiary)' }} onClick={() => setSelectedImage(null)}>
-                      Close
+                      <Moon size={18} /> Dark
+                    </button>
+                    <button
+                      className="btn"
+                      style={{ background: theme === 'light' ? 'var(--accent-primary)' : 'var(--bg-tertiary)', color: theme === 'light' ? 'white' : 'var(--text-primary)' }}
+                      onClick={() => setTheme('light')}
+                    >
+                      <Sun size={18} /> Light
                     </button>
                   </div>
-                ) : downloadProgress?.error ? (
-                  <div style={{ textAlign: 'center', color: 'var(--error-color)', padding: '1rem' }}>
-                    <X size={32} style={{ margin: '0 auto 0.5rem auto' }} />
-                    <p style={{ fontWeight: 500, marginBottom: '0.5rem' }}>Download Failed</p>
-                    <p style={{ fontSize: '0.85rem', marginBottom: '1rem', wordBreak: 'break-word' }}>{downloadProgress?.msg}</p>
-                    <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
-                      <button className="btn" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)' }} onClick={() => setDownloadProgress(null)}>
-                        Cancel
+                </div>
+
+                <div className="control-group" style={{ marginTop: '2rem' }}>
+                  <label className="control-label">Default Download Directory</label>
+                  <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                    <input
+                      type="text"
+                      className="text-input"
+                      readOnly
+                      value={downloadPath || 'Ask every time'}
+                      style={{ flex: 1 }}
+                    />
+                    <button className="btn" style={{ width: 'auto', background: 'var(--bg-tertiary)', color: 'var(--text-primary)' }} onClick={selectDirectory}>
+                      <FolderOpen size={18} /> Browse...
+                    </button>
+                    {downloadPath && (
+                      <button className="btn" style={{ width: 'auto', background: 'var(--bg-tertiary)', color: 'var(--error-color)' }} onClick={() => setDownloadPath('')}>
+                        <X size={18} /> Clear
                       </button>
-                      <button className="btn" style={{ background: 'var(--accent-primary)', color: 'white' }} onClick={handleDownload} disabled={platforms.length === 0}>
-                        <Download size={16} /> Retry Download
-                      </button>
-                    </div>
+                    )}
                   </div>
-                ) : (
-                  <div className="progress-container">
-                    <div className="progress-header">
-                      <span>{downloadProgress?.msg}</span>
-                      <span>{downloadProgress?.percent}%</span>
-                    </div>
-                    <div className="progress-bar-bg">
-                      <div className="progress-bar-fill" style={{ width: `${downloadProgress?.percent}%` }}></div>
-                    </div>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', marginTop: '0.5rem' }}>
+                    If set, images will be automatically downloaded here without prompting.
+                  </p>
+                </div>
+
+                <div className="control-group" style={{ marginTop: '2rem' }}>
+                  <label className="control-label">About</label>
+                  <div style={{ display: 'flex', gap: '1rem' }}>
+                    <button className="btn" style={{ width: 'auto', background: 'var(--bg-tertiary)', color: 'var(--text-primary)' }} onClick={async () => {
+                      try {
+                        // @ts-ignore
+                        await window.ipcRenderer.invoke('open-external-link', 'https://github.com/Seongjunghyun/dock-fetch')
+                      } catch (e) {
+                        console.error("Failed to open external link", e)
+                      }
+                    }}>
+                      <Github size={18} /> View on GitHub
+                    </button>
                   </div>
-                )}
-              </>
-            )}
+                </div>
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
+
+      {downloadComplete && (
+        <div className="toast-container">
+          <div className="toast">
+            <div className="toast-icon" style={{ color: 'var(--success-color)' }}>
+              <CheckCircle2 size={24} />
+            </div>
+            <div className="toast-content">
+              <h4 className="toast-title">Download Complete</h4>
+              <p className="toast-message">{downloadComplete}</p>
+            </div>
+            <button className="toast-close" onClick={() => setDownloadComplete(null)}>
+              <X size={16} />
+            </button>
           </div>
         </div>
       )}

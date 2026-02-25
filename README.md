@@ -1,25 +1,30 @@
 # 🐳 DockFetch
 
-> A Standalone Desktop App for Exploring and Downloading Docker Images
+> **The easiest way to download Docker images as `.tar` files, directly to your desktop.**
 
-DockFetch is a powerful, beautifully designed Electron application that allows you to search the Docker Hub registry, inspect tags and metadata, and securely download Docker image layers directly as `.tar` files to your local machine—**all without needing the Docker Desktop daemon running.**
+**DockFetch** is a sleek, standalone desktop application built to solve one core problem: **downloading Docker images is too complicated.** 
 
-## ✨ Key Features
+Usually, extracting a Docker image requires running a bulky background daemon, typing out `docker pull`, waiting for it to load into a hidden virtual machine, and then manually running `docker save -o image.tar` just to get a single file. 
 
-- **Standalone Operation**: Directly fetches image layers via `tar-stream` and packages them into standard `docker load`-ready `.tar` files. No `dockerd` required!
-- **Rich Meta Exploration**: Instantly browse repository details, star counts, pull counts, platforms, and specific tag digests.
-- **Smart Local Storage Management**: A dedicated `Storage` tab to view, open, and permanently delete your downloaded `.tar` images to manage disk space.
-- **Download History & Redownload**: The `Recent` tab tracks all your downloaded images, showing whether the physical file is `Available` or `Missing`. Seamlessly redownload identical tags with an auto-overwrite mechanism.
-- **Favorites System**: Bookmark your most used Docker images with a single click. The `Favorites` tab tracks if you already have the image stored locally.
-- **Local Docker Integration**: If you *do* have Docker Desktop running, DockFetch can show you your currently installed local images and export them directly to `.tar` files.
-- **Beautiful & Customizable UI**: Featuring a modern dark/light mode toggle, squircle action buttons, and drag-and-drop customizable sidebar navigation.
+DockFetch completely skips that. Our app lets you explore the entire Docker Hub registry visually, pick the exact tag you need, and download the filesystem layers straight into a ready-to-use `.tar` file on your Mac or PC—**all without needing the Docker Desktop daemon running.**
+
+---
+
+## ✨ Why DockFetch?
+- **No Daemon Required**: Directly fetches image layers via HTTP and packages them into standard `docker load`-ready `.tar` files locally.
+- **Visual Registry Explorer**: Instantly search for images, browse available tags, filter by platform architecture, and check layer sizes before downloading.
+- **Favorites & Storage Manager**: Bookmark the images you care about most, and manage your downloaded `.tar` files directly from a built-in clean UI.
+- **One-Click Local Loading**: *If* you have Docker installed, you can beam your downloaded `.tar` files straight into your local daemon with a single click. No terminal required.
+- **Export Existing Images**: Browse your local Docker images and instantly export them back out to `.tar` files for sharing or cold storage.
+
+---
 
 ## 🚀 Getting Started
 
 ### ⚠️ macOS "App is damaged" Error (Gatekeeper)
-Because this is an open-source tool without a paid Apple Developer certificate, macOS Gatekeeper may flag the downloaded `.dmg` or `.app` as "damaged" due to it being unsigned.
+Because this is an open-source tool without an Apple Developer certificate, macOS Gatekeeper may flag the downloaded `.dmg` or `.app` as "damaged".
 
-**To fix this:**
+**To bypass this:**
 1. Open the `.dmg` and drag **DockFetch** into your `Applications` folder.
 2. Open your terminal and run the following command to remove the quarantine flag:
    ```bash
@@ -28,10 +33,10 @@ Because this is an open-source tool without a paid Apple Developer certificate, 
 3. You can now open DockFetch normally from your Launchpad!
 
 ### Prerequisites
-- [Node.js](https://nodejs.org/) (v16 or higher recommended)
-- (Optional) Docker daemon for the "Local Docker" export feature.
+- [Node.js](https://nodejs.org/) (v16 or higher recommended for building)
+- *(Optional)* Docker daemon for the "Local Docker" import/export features.
 
-### Installation & Run
+### Installation & Run Locally
 ```bash
 # Clone the repository
 git clone https://github.com/your-username/dock-fetch.git
@@ -44,8 +49,8 @@ npm install
 npm run dev
 ```
 
-### Build for Production (Cross-Platform)
-DockFetch supports building executables for multiple operating systems!
+### Build for Production
+DockFetch supports building executables for multiple operating systems out-of-the-box!
 
 ```bash
 # Build for your current OS (Default)
@@ -57,29 +62,29 @@ npm run build:mac
 # Build for Windows (.exe / NSIS)
 npm run build:win
 
+```bash
 # Build for Linux (.AppImage, .deb)
 npm run build:linux
-
-# Build for ALL platforms (requires proper toolchains)
-npm run build:all
 ```
 
 ## 📸 Screenshots
 
-### 1. Search & Details
-_Browsing Docker Hub images and selecting specific tags for extraction._
+Have some images you'd like to show off? Drop them into the `assets` folder!
+
+### 1. Search Overlay & Details
+*Floating search results and inline registry tag exploration.*
 <br>
 <img src="assets/search.png" alt="Search and Details view of DockFetch" width="800"/>
 
-### 2. Recent History
-_Viewing and managing the download history with smart 'Available' and 'Missing' physical file tracking._
+### 2. Favorites List
+*Track the images you rely on the most and manage download states.*
 <br>
-<img src="assets/recent.png" alt="Recent downloads track record" width="800"/>
+<img src="assets/favorites.png" alt="DockFetch Favorites" width="800"/>
 
-### 3. Storage Manager
-_A clean interface for natively managing and permanently deleting physical local `.tar` layers._
+### 3. Local Docker Integration
+*Instantly browse your local Docker environment and export active images seamlessly to physical `.tar` files.*
 <br>
-<img src="assets/storage.png" alt="DockFetch Storage Manager UI" width="800"/>
+<img src="assets/localdocker.png" alt="DockFetch Local Docker Integration" width="800"/>
 
 ## 🛠 Tech Stack
 - **Frontend**: React, Vite, Vanilla CSS, Lucide React Icons

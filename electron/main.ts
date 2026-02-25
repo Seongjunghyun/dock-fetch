@@ -28,6 +28,10 @@ let win: BrowserWindow | null
 
 function createWindow() {
   win = new BrowserWindow({
+    width: 1280,
+    height: 800,
+    minWidth: 1024,
+    minHeight: 640,
     icon: path.join(process.env.VITE_PUBLIC, 'electron-vite.svg'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
@@ -60,6 +64,18 @@ ipcMain.handle('get-platforms', async (_, repo: string, tag: string) => {
   return await getAvailablePlatforms(repo, tag)
 })
 
+let activeControllers: Record<string, AbortController> = {}
+
+ipcMain.handle('cancel-download', async (_, repo: string, tag: string) => {
+  const key = `${repo}:${tag}`
+  if (activeControllers[key]) {
+    activeControllers[key].abort()
+    delete activeControllers[key]
+    return true
+  }
+  return false
+})
+
 ipcMain.handle('download-image', async (event, repo: string, tag: string, digest: string, defaultPath: string | null) => {
   let targetPath = ''
 
@@ -80,17 +96,91 @@ ipcMain.handle('download-image', async (event, repo: string, tag: string, digest
     targetPath = filePath
   }
 
+  const controller = new AbortController()
+  const key = `${repo}:${tag}`
+  activeControllers[key] = controller
+
   try {
     const token = await import('./docker-api').then(m => m.getAuthToken(repo))
     await downloadImageAsTar(repo, tag, digest, token, targetPath, (msg, percent) => {
       // Send progress back to renderer
       event.sender.send('download-progress', { repo, tag, msg, percent })
-    })
+    }, controller.signal)
     return targetPath
   } catch (err: any) {
+    const axios = (await import('axios')).default
+    if (axios.isCancel(err) || err.name === 'AbortError' || err.message === 'canceled') {
+      console.log('Download canceled by user:', key)
+      throw new Error('Canceled by user')
+    }
     console.error('Download error:', err)
     throw new Error(err.message)
+  } finally {
+    delete activeControllers[key]
   }
+})
+
+ipcMain.handle('fetch-to-local-docker', async (event, repo: string, tag: string, digest: string) => {
+  try {
+    const os = await import('node:os')
+    const fs = await import('node:fs')
+    const path = await import('node:path')
+
+    // 1. Download to temp file
+    const tempPath = path.join(os.tmpdir(), `dockfetch_${Date.now()}_${repo.replace(/\//g, '_')}_${tag.replace(/\//g, '_')}.tar`)
+    const token = await import('./docker-api').then(m => m.getAuthToken(repo))
+
+    const controller = new AbortController()
+    const key = `${repo}:${tag}`
+    activeControllers[key] = controller
+
+    try {
+      await downloadImageAsTar(repo, tag, digest, token, tempPath, (_msg, percent) => {
+        event.sender.send('download-progress', { repo, tag, msg: `Downloading to temp: ${Math.round(percent)}%`, percent })
+      }, controller.signal)
+    } finally {
+      delete activeControllers[key]
+    }
+
+    // 2. Load into docker
+    event.sender.send('download-progress', { repo, tag, msg: 'Loading into Docker daemon...', percent: 100 })
+
+    return new Promise((resolve, reject) => {
+      const env = { ...process.env, PATH: `${process.env.PATH}:/usr/local/bin:/opt/homebrew/bin` }
+      exec(`docker load -i "${tempPath}"`, { env }, (error, stdout, stderr) => {
+        // 3. Cleanup temp file
+        try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath) } catch (e) { }
+
+        if (error) {
+          console.error('Docker load error:', error, stderr)
+          reject(new Error(stderr || error.message))
+        } else {
+          resolve({ success: true, output: stdout })
+        }
+      })
+    })
+  } catch (err: any) {
+    const axios = (await import('axios')).default
+    if (axios.isCancel(err) || err.name === 'AbortError' || err.message === 'canceled') {
+      throw new Error('Canceled by user')
+    }
+    console.error('Fetch to docker error:', err)
+    throw new Error(err.message)
+  }
+})
+
+ipcMain.handle('load-local-image', async (_, targetPath: string) => {
+  return new Promise((resolve, reject) => {
+    const env = { ...process.env, PATH: `${process.env.PATH}:/usr/local/bin:/opt/homebrew/bin` }
+    exec(`docker load -i "${targetPath}"`, { env }, (error, stdout, stderr) => {
+      if (error) {
+        console.error('Docker load error:', error, stderr)
+        reject(new Error(stderr || error.message))
+      } else {
+        resolve({ success: true, output: stdout })
+      }
+    })
+  })
 })
 
 ipcMain.handle('select-directory', async () => {
@@ -214,9 +304,24 @@ ipcMain.handle('delete-file', async (_, targetPath: string) => {
   }
 })
 
-ipcMain.on('open-external-link', (_, url: string) => {
-  const { shell } = require('electron')
-  shell.openExternal(url)
+ipcMain.handle('open-external-link', async (_, url: string) => {
+  await shell.openExternal(url)
+  return true
+})
+
+// --- Image Management IPC ---
+ipcMain.handle('delete-local-image', async (_, imageId: string) => {
+  return new Promise((resolve) => {
+    const env = { ...process.env, PATH: `${process.env.PATH}:/usr/local/bin:/opt/homebrew/bin` }
+    exec(`docker rmi -f "${imageId}"`, { env }, (error, stdout, stderr) => {
+      if (error) {
+        console.error('Docker rmi error:', error, stderr)
+        resolve({ success: false, error: stderr || error.message })
+      } else {
+        resolve({ success: true, output: stdout })
+      }
+    })
+  })
 })
 
 // Quit when all windows are closed, except on macOS. There, it's common

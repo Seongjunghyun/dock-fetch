@@ -69,8 +69,6 @@ npm run build:linux
 
 ## 📸 Screenshots
 
-Have some images you'd like to show off? Drop them into the `assets` folder!
-
 ### 1. Search Overlay & Details
 *Floating search results and inline registry tag exploration.*
 <br>
@@ -92,3 +90,4 @@ Have some images you'd like to show off? Drop them into the `assets` folder!
 
 ## 📄 License
 MIT License
+

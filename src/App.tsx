@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Search, Download, Star, FolderOpen, Sun, Moon, Settings, Loader2, X, HardDrive, CheckCircle2, ChevronDown, Package, Heart, Trash2, Github } from 'lucide-react'
+import { Search, Download, Star, FolderOpen, Sun, Moon, Settings, Loader2, X, HardDrive, CheckCircle2, ChevronDown, Package, Heart, Trash2, Github, Info } from 'lucide-react'
 
 // Helper hooks for LocalStorage
 function useLocalStorage<T>(key: string, initialValue: T): [T, (val: T) => void] {
@@ -168,15 +168,27 @@ function App() {
   const [isFetchingMetadata, setIsFetchingMetadata] = useState(false)
   const [downloadProgress, setDownloadProgress] = useState<{ msg: string; percent?: number; error?: boolean; loading?: boolean } | null>(null)
   const isDownloadingRef = useRef(false)
-  const [downloadComplete, setDownloadComplete] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ title: string; message: string; type: 'success' | 'error' | 'info' } | null>(null)
+  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  const showToast = (title: string, message: string, type: 'success' | 'error' | 'info' = 'info', duration = 3000) => {
+    setToast({ title, message, type })
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current)
+    toastTimeoutRef.current = setTimeout(() => setToast(null), duration)
+  }
 
   const [localImages, setLocalImages] = useState<any[]>([])
   const [isFetchingLocal, setIsFetchingLocal] = useState(false)
   const [exportProgress, setExportProgress] = useState<{ msg: string } | null>(null)
   const [deleteProgress, setDeleteProgress] = useState<{ msg: string, loading?: boolean, error?: boolean } | null>(null)
 
+  const [storageSearchQuery, setStorageSearchQuery] = useState('')
+  const [localDockerSearchQuery, setLocalDockerSearchQuery] = useState('')
+  const [selectedStorageFiles, setSelectedStorageFiles] = useState<string[]>([])
+  const [selectedLocalImages, setSelectedLocalImages] = useState<string[]>([])
+
   // Docker Load Progress
-  const [dockerLoadProgress, setDockerLoadProgress] = useState<{ msg: string, loading: boolean } | null>(null)
+  const [dockerLoadProgress, setDockerLoadProgress] = useState<{ msg: string; loading?: boolean; error?: boolean } | null>(null)
 
   const [directoryTars, setDirectoryTars] = useState<any[]>([])
 
@@ -206,7 +218,9 @@ function App() {
   useEffect(() => {
     setSelectedImage(null)
     setDownloadProgress(null)
-    setDownloadComplete(null)
+    setToast(null)
+    setSelectedStorageFiles([])
+    setSelectedLocalImages([])
 
     if (activeTab === 'local') {
       fetchLocalImages()
@@ -236,7 +250,8 @@ function App() {
       // @ts-ignore
       const res = await window.ipcRenderer.invoke('delete-file', filePath)
       if (res.success) {
-        // Refresh the list
+        // Refresh the list and clear selection if deleted
+        setSelectedStorageFiles(prev => prev.filter(p => p !== filePath))
         fetchDirectoryTars()
       } else {
         alert(`Failed to delete file:\n${res.error}`)
@@ -261,12 +276,13 @@ function App() {
   }
 
   const deleteLocalImage = async (img: any) => {
-    const targetImage = img.repo === 'untagged' ? img.id : `${img.repo}:${img.tag}`
+    const targetImage = (img.repo === '<none>' || img.tag === '<none>' || img.repo === 'untagged') ? img.id : `${img.repo}:${img.tag}`
     try {
       // @ts-ignore
       const result = await window.ipcRenderer.invoke('delete-local-image', targetImage)
       if (result && result.success) {
         setDeleteProgress(null)
+        setSelectedLocalImages(prev => prev.filter(id => id !== img.id))
         fetchLocalImages(true)
       } else {
         setDeleteProgress({ msg: `Failed to delete: ${result.error}`, error: true, loading: false })
@@ -361,7 +377,7 @@ function App() {
     setSelectedTag('')
     setSelectedDigest('')
     setDownloadProgress(null)
-    setDownloadComplete(null)
+    setToast(null)
     setDockerLoadProgress(null)
     setIsFetchingMetadata(true)
 
@@ -412,15 +428,14 @@ function App() {
   const triggerDownload = async (repo: string, tag: string, digest: string) => {
     isDownloadingRef.current = true
     setDownloadProgress({ msg: 'Starting download...', percent: 0 })
-    setDownloadComplete(null)
+    setToast(null)
 
     try {
       // @ts-ignore
       const filePath = await window.ipcRenderer.invoke('download-image', repo, tag, digest, downloadPath || null)
       if (filePath) {
         isDownloadingRef.current = false
-        setDownloadComplete('Download Successfully Completed!')
-        setTimeout(() => setDownloadComplete(null), 3000)
+        showToast('Download Complete', 'Successfully saved image locally.', 'success')
         setDownloadProgress(null)
         // Add to library history
         const newEntry = {
@@ -448,6 +463,7 @@ function App() {
       console.error(err)
       isDownloadingRef.current = false
       setDownloadProgress({ msg: err.message || 'Error: Download failed. Check network or tag validity.', percent: 0, error: true })
+      showToast('Download Failed', err.message || 'Failed to download the .tar locally.', 'error', 5000)
     }
   }
 
@@ -472,7 +488,7 @@ function App() {
   const handleFetchToDocker = async () => {
     if (!selectedImage || !selectedTag || !selectedDigest) return
     setDockerLoadProgress({ msg: 'Initializing direct docker load...', loading: true })
-    setDownloadComplete(null)
+    setToast(null)
 
     try {
       // We will listen to the same download-progress event, but it's handled in main.ts
@@ -481,17 +497,124 @@ function App() {
       if (result && result.success) {
         setDockerLoadProgress(null)
         setDownloadProgress(null)
-        setDownloadComplete('Successfully loaded image into local Docker daemon!')
-        setTimeout(() => setDownloadComplete(null), 3000)
+        showToast('Load Complete', 'Successfully loaded image into local Docker daemon!', 'success')
         fetchLocalImages(true)
       } else {
-        setDockerLoadProgress({ msg: 'Failed to load image', loading: false })
+        setDockerLoadProgress({ msg: 'Failed to load image', loading: false, error: true })
         setDownloadProgress(null)
       }
     } catch (err: any) {
       console.error(err)
-      setDockerLoadProgress({ msg: err.message || 'Error: Direct load failed.', loading: false })
+      setDockerLoadProgress({ msg: err.message || 'Error: Direct load failed.', loading: false, error: true })
       setDownloadProgress(null)
+      showToast('Docker Load Failed', err.message || 'Failed to initialize docker daemon connection.', 'error', 5000)
+    }
+  }
+
+  const handleBatchDeleteStorage = async () => {
+    if (selectedStorageFiles.length === 0) return
+    let successCount = 0
+    let failCount = 0
+    for (const filePath of selectedStorageFiles) {
+      try {
+        // @ts-ignore
+        const res = await window.ipcRenderer.invoke('delete-file', filePath)
+        if (res && res.success !== false) successCount++
+        else failCount++
+      } catch (err) {
+        failCount++
+      }
+    }
+    setSelectedStorageFiles([])
+    fetchDirectoryTars()
+    if (failCount > 0) {
+      showToast('Batch Delete Completed', `Deleted ${successCount} files. Failed: ${failCount}`, 'info')
+    } else {
+      showToast('Batch Delete', `Successfully deleted ${successCount} files.`, 'success')
+    }
+  }
+
+  const handleBatchLoadStorage = async () => {
+    if (selectedStorageFiles.length === 0) return
+    setToast(null)
+    setDockerLoadProgress({ msg: `Initializing load for ${selectedStorageFiles.length} files...`, loading: true })
+    let successCount = 0
+    let failCount = 0
+    for (let i = 0; i < selectedStorageFiles.length; i++) {
+      const filePath = selectedStorageFiles[i];
+      setDockerLoadProgress({ msg: `Loading ${i + 1} of ${selectedStorageFiles.length} files...`, loading: true })
+      try {
+        // @ts-ignore
+        const res = await window.ipcRenderer.invoke('load-local-image', filePath)
+        if (res && res.success !== false) successCount++
+        else failCount++
+      } catch (err) {
+        failCount++
+      }
+    }
+    setDockerLoadProgress(null)
+    setSelectedStorageFiles([])
+    fetchLocalImages(true)
+    if (failCount > 0) {
+      showToast('Batch Load Completed', `Loaded ${successCount} files. Failed: ${failCount}`, 'info')
+    } else {
+      showToast('Batch Load', `Successfully loaded ${successCount} files into Docker.`, 'success')
+    }
+  }
+
+  const handleBatchDeleteLocal = async () => {
+    if (selectedLocalImages.length === 0) return
+    let successCount = 0
+    let failCount = 0
+    for (const imageId of selectedLocalImages) {
+      const img = localImages.find(i => i.id === imageId)
+      if (!img) { failCount++; continue; }
+      const targetImage = (img.repo === '<none>' || img.tag === '<none>' || img.repo === 'untagged') ? img.id : `${img.repo}:${img.tag}`
+      try {
+        // @ts-ignore
+        const res = await window.ipcRenderer.invoke('delete-local-image', targetImage)
+        if (res && res.success !== false) successCount++
+        else failCount++
+      } catch (err) {
+        failCount++
+      }
+    }
+    setSelectedLocalImages([])
+    fetchLocalImages(true)
+    if (failCount > 0) {
+      showToast('Batch Delete Completed', `Deleted ${successCount} images. Failed: ${failCount}`, 'info')
+    } else {
+      showToast('Batch Delete', `Successfully deleted ${successCount} images.`, 'success')
+    }
+  }
+
+  const handleBatchExportLocal = async () => {
+    if (selectedLocalImages.length === 0) return
+    if (!downloadPath) {
+      showToast('Batch Export Failed', 'Please set a Default Download Directory in Settings first.', 'error')
+      return
+    }
+    setExportProgress({ msg: `Exporting ${selectedLocalImages.length} images...` })
+    let successCount = 0
+    let failCount = 0
+    for (const imageId of selectedLocalImages) {
+      const image = localImages.find(i => i.id === imageId)
+      if (!image) continue
+      try {
+        // @ts-ignore
+        const res = await window.ipcRenderer.invoke('save-local-image', image.repo, image.tag, image.id, downloadPath)
+        if (res) successCount++
+        else failCount++
+      } catch (err) {
+        failCount++
+      }
+    }
+    setExportProgress(null)
+    setSelectedLocalImages([])
+    if (failCount > 0) {
+      showToast('Batch Export Completed', `Exported ${successCount} images. Failed: ${failCount}`, 'info')
+    } else {
+      showToast('Batch Export', `Successfully exported ${successCount} images.`, 'success')
     }
   }
 
@@ -793,8 +916,8 @@ function App() {
                                     <>
                                       <div className="progress-container" style={{ margin: '0.5rem 0' }}>
                                         <div className="progress-header" style={{ fontSize: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '0.5rem', paddingRight: '0.5rem', minWidth: 0, color: dockerLoadProgress.loading ? 'var(--text-primary)' : (dockerLoadProgress.msg.includes('Failed') ? 'var(--error-color)' : 'var(--success-color)') }}>
-                                            {dockerLoadProgress.loading ? <Loader2 className="spinner" size={14} color="var(--accent-primary)" /> : (dockerLoadProgress.msg.includes('Failed') ? <X size={14} /> : <CheckCircle2 size={14} />)}
+                                          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '0.5rem', paddingRight: '0.5rem', minWidth: 0, color: dockerLoadProgress.loading ? 'var(--text-primary)' : (dockerLoadProgress.error || dockerLoadProgress.msg.toLowerCase().includes('fail') || dockerLoadProgress.msg.toLowerCase().includes('cancel') ? 'var(--error-color)' : 'var(--success-color)') }}>
+                                            {dockerLoadProgress.loading ? <Loader2 className="spinner" size={14} color="var(--accent-primary)" /> : (dockerLoadProgress.error || dockerLoadProgress.msg.toLowerCase().includes('fail') || dockerLoadProgress.msg.toLowerCase().includes('cancel') ? <X size={14} /> : <CheckCircle2 size={14} />)}
                                             <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dockerLoadProgress.msg}</span>
                                           </div>
                                           <button
@@ -1105,19 +1228,72 @@ function App() {
                     <p style={{ color: 'var(--text-secondary)' }}>No .tar images found in your default download directory.</p>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                      {directoryTars.map((file, idx) => {
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', padding: '0' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                          <label style={{ marginLeft: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem', color: selectedStorageFiles.length > 0 ? 'white' : 'var(--text-primary)', userSelect: 'none', whiteSpace: 'nowrap' }}>
+                            <input
+                              type="checkbox"
+                              checked={directoryTars.length > 0 && selectedStorageFiles.length === directoryTars.length}
+                              onChange={(e) => {
+                                if (e.target.checked) setSelectedStorageFiles(directoryTars.map(f => f.path))
+                                else setSelectedStorageFiles([])
+                              }}
+                              style={{ width: '16px', height: '16px', accentColor: 'var(--accent-primary)', cursor: 'pointer' }}
+                            />
+                            {selectedStorageFiles.length > 0 ? `${selectedStorageFiles.length} Selected` : 'Select All'}
+                          </label>
+                          {selectedStorageFiles.length > 0 && (
+                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                              <button className="btn" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem', background: 'var(--accent-primary)', color: 'white' }} onClick={handleBatchLoadStorage}>Load</button>
+                              <button className="btn" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem', background: 'var(--error-color)', color: 'white' }} onClick={handleBatchDeleteStorage}>Delete</button>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="search-container" style={{ width: '400px', marginBottom: 0, padding: 0, background: 'transparent' }}>
+                          <Search className="search-icon" size={20} />
+                          <input
+                            type="text"
+                            className="search-input"
+                            placeholder="Filter storage files..."
+                            value={storageSearchQuery}
+                            onChange={(e) => setStorageSearchQuery(e.target.value)}
+                            style={{ height: '44px', fontSize: '0.95rem' }}
+                          />
+                        </div>
+                      </div>
+
+                      {dockerLoadProgress && (
+                        <div className="glass-panel" style={{ padding: '0.8rem 1rem', marginBottom: '0.5rem', borderRadius: 'var(--radius-md)', color: dockerLoadProgress.error ? 'var(--error-color)' : (dockerLoadProgress.loading ? 'var(--accent-primary)' : 'var(--success-color)'), display: 'flex', alignItems: 'center', gap: '0.5rem', border: `1px solid ${dockerLoadProgress.error ? 'var(--error-color)' : (dockerLoadProgress.loading ? 'var(--accent-primary)' : 'var(--success-color)')}` }}>
+                          {dockerLoadProgress.loading ? <Loader2 className="spinner" size={16} /> : (dockerLoadProgress.error ? <X size={16} /> : <CheckCircle2 size={16} />)} {dockerLoadProgress.msg}
+                        </div>
+                      )}
+
+                      {directoryTars.filter(f => f.name.toLowerCase().includes(storageSearchQuery.toLowerCase())).map((file, idx) => {
                         const match = libraryHistory.find(e => file.path === e.path);
                         const parts = file.name.replace('.tar', '').split('_');
                         const repoName = match ? match.repo_name : (parts.length >= 3 ? parts[1] : parts[0]);
                         return (
-                          <div key={idx} className="glass-panel" style={{ padding: '1rem 1.5rem', borderRadius: 'var(--radius-md)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', padding: '0.25rem 0' }}>
-                              <div style={{ width: '40px', height: '40px', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '1rem', flexShrink: 0 }}>
-                                <ImageLogo repoName={repoName} size={24} />
+                          <div key={idx} className={`glass-panel ${selectedStorageFiles.includes(file.path) ? 'selected' : ''}`} style={{ padding: '0.5rem 1rem', borderRadius: 'var(--radius-md)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'all 0.2s', border: selectedStorageFiles.includes(file.path) ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', padding: '0.1rem 0' }}>
+                              <input
+                                type="checkbox"
+                                checked={selectedStorageFiles.includes(file.path)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedStorageFiles(prev => [...prev, file.path])
+                                  } else {
+                                    setSelectedStorageFiles(prev => prev.filter(p => p !== file.path))
+                                  }
+                                }}
+                                style={{ marginRight: '1rem', width: '16px', height: '16px', cursor: 'pointer', accentColor: 'var(--accent-primary)' }}
+                              />
+                              <div style={{ width: '48px', height: '48px', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '1rem', flexShrink: 0 }}>
+                                <ImageLogo repoName={repoName} size={28} />
                               </div>
                               <div>
-                                <h3 style={{ fontWeight: 600, fontSize: '1rem', margin: '0 0 0.25rem 0' }}>{file.name}</h3>
-                                <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: 0 }}>
+                                <h3 style={{ fontWeight: 600, fontSize: '0.95rem', margin: '0 0 0.15rem 0' }}>{file.name}</h3>
+                                <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', margin: 0 }}>
                                   Size: {formatNumber(file.size)} Bytes • Modified: {new Date(file.modified).toLocaleString()}
                                 </p>
                               </div>
@@ -1151,18 +1327,6 @@ function App() {
                 </button>
               </div>
 
-              {exportProgress && (
-                <div className="glass-panel" style={{ padding: '1rem', marginBottom: '1.5rem', borderRadius: 'var(--radius-md)', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <Loader2 className="spinner" size={16} /> {exportProgress.msg}
-                </div>
-              )}
-
-              {deleteProgress && (
-                <div className="glass-panel" style={{ padding: '1rem', marginBottom: '1.5rem', borderRadius: 'var(--radius-md)', color: deleteProgress.error ? 'var(--error-color)' : (deleteProgress.loading ? 'var(--accent-primary)' : 'var(--success-color)'), display: 'flex', alignItems: 'center', gap: '0.5rem', border: `1px solid ${deleteProgress.error ? 'var(--error-color)' : (deleteProgress.loading ? 'var(--accent-primary)' : 'var(--success-color)')}` }}>
-                  {deleteProgress.loading ? <Loader2 className="spinner" size={16} /> : (deleteProgress.error ? <X size={16} /> : <CheckCircle2 size={16} />)} {deleteProgress.msg}
-                </div>
-              )}
-
               {isFetchingLocal ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-secondary)' }}>
                   <Loader2 className="spinner" size={18} />
@@ -1172,15 +1336,74 @@ function App() {
                 <p style={{ color: 'var(--text-secondary)' }}>No local images found or Docker is not running.</p>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                  {localImages.map((img, idx) => (
-                    <div key={idx} className="glass-panel" style={{ padding: '1rem 1.5rem', borderRadius: 'var(--radius-md)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', padding: '0.25rem 0' }}>
-                        <div style={{ width: '40px', height: '40px', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '1rem', flexShrink: 0 }}>
-                          <ImageLogo repoName={img.repo} size={24} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', padding: '0' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                      <label style={{ marginLeft: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem', color: selectedLocalImages.length > 0 ? 'white' : 'var(--text-primary)', userSelect: 'none', whiteSpace: 'nowrap' }}>
+                        <input
+                          type="checkbox"
+                          checked={localImages.length > 0 && selectedLocalImages.length === localImages.length}
+                          onChange={(e) => {
+                            if (e.target.checked) setSelectedLocalImages(localImages.map(i => i.id))
+                            else setSelectedLocalImages([])
+                          }}
+                          style={{ width: '16px', height: '16px', accentColor: 'var(--accent-primary)', cursor: 'pointer' }}
+                        />
+                        {selectedLocalImages.length > 0 ? `${selectedLocalImages.length} Selected` : 'Select All'}
+                      </label>
+                      {selectedLocalImages.length > 0 && (
+                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                          <button className="btn" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem', background: 'var(--accent-primary)', color: 'white' }} onClick={handleBatchExportLocal}>Export</button>
+                          <button className="btn" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem', background: 'var(--error-color)', color: 'white' }} onClick={handleBatchDeleteLocal}>Delete</button>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="search-container" style={{ width: '400px', marginBottom: 0, padding: 0, background: 'transparent' }}>
+                      <Search className="search-icon" size={20} />
+                      <input
+                        type="text"
+                        className="search-input"
+                        placeholder="Filter local images..."
+                        value={localDockerSearchQuery}
+                        onChange={(e) => setLocalDockerSearchQuery(e.target.value)}
+                        style={{ height: '44px', fontSize: '0.95rem' }}
+                      />
+                    </div>
+                  </div>
+
+                  {exportProgress && (
+                    <div className="glass-panel" style={{ padding: '0.8rem 1rem', marginBottom: '0.5rem', borderRadius: 'var(--radius-md)', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <Loader2 className="spinner" size={16} /> {exportProgress.msg}
+                    </div>
+                  )}
+
+                  {deleteProgress && (
+                    <div className="glass-panel" style={{ padding: '0.8rem 1rem', marginBottom: '0.5rem', borderRadius: 'var(--radius-md)', color: deleteProgress.error ? 'var(--error-color)' : (deleteProgress.loading ? 'var(--accent-primary)' : 'var(--success-color)'), display: 'flex', alignItems: 'center', gap: '0.5rem', border: `1px solid ${deleteProgress.error ? 'var(--error-color)' : (deleteProgress.loading ? 'var(--accent-primary)' : 'var(--success-color)')}` }}>
+                      {deleteProgress.loading ? <Loader2 className="spinner" size={16} /> : (deleteProgress.error ? <X size={16} /> : <CheckCircle2 size={16} />)} {deleteProgress.msg}
+                    </div>
+                  )}
+
+                  {localImages.filter(img => `${img.repo}:${img.tag}`.toLowerCase().includes(localDockerSearchQuery.toLowerCase())).map((img, idx) => (
+                    <div key={idx} className={`glass-panel ${selectedLocalImages.includes(img.id) ? 'selected' : ''}`} style={{ padding: '0.5rem 1rem', borderRadius: 'var(--radius-md)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'all 0.2s', border: selectedLocalImages.includes(img.id) ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', padding: '0.1rem 0' }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedLocalImages.includes(img.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedLocalImages(prev => [...prev, img.id])
+                            } else {
+                              setSelectedLocalImages(prev => prev.filter(p => p !== img.id))
+                            }
+                          }}
+                          style={{ marginRight: '1rem', width: '16px', height: '16px', cursor: 'pointer', accentColor: 'var(--accent-primary)' }}
+                        />
+                        <div style={{ width: '48px', height: '48px', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '1rem', flexShrink: 0 }}>
+                          <ImageLogo repoName={img.repo} size={28} />
                         </div>
                         <div>
-                          <h3 style={{ fontWeight: 600, fontSize: '1rem', margin: '0 0 0.25rem 0' }}>{img.repo}:{img.tag}</h3>
-                          <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: 0 }}>
+                          <h3 style={{ fontWeight: 600, fontSize: '0.95rem', margin: '0 0 0.15rem 0' }}>{img.repo}:{img.tag}</h3>
+                          <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', margin: 0 }}>
                             ID: {img.id} • Size: {img.size} • Created: {img.created}
                           </p>
                         </div>
@@ -1272,17 +1495,19 @@ function App() {
         </main>
       </div>
 
-      {downloadComplete && (
+      {toast && (
         <div className="toast-container">
           <div className="toast">
-            <div className="toast-icon" style={{ color: 'var(--success-color)' }}>
-              <CheckCircle2 size={24} />
+            <div className={`toast-icon ${toast.type}`} style={{ color: toast.type === 'error' ? 'var(--error-color)' : (toast.type === 'success' ? 'var(--success-color)' : 'var(--text-primary)') }}>
+              {toast.type === 'success' && <CheckCircle2 size={24} />}
+              {toast.type === 'error' && <X size={24} />}
+              {toast.type === 'info' && <Info size={24} />}
             </div>
             <div className="toast-content">
-              <h4 className="toast-title">Download Complete</h4>
-              <p className="toast-message">{downloadComplete}</p>
+              <h4 className="toast-title">{toast.title}</h4>
+              <p className="toast-message">{toast.message}</p>
             </div>
-            <button className="toast-close" onClick={() => setDownloadComplete(null)}>
+            <button className="toast-close" onClick={() => setToast(null)}>
               <X size={16} />
             </button>
           </div>

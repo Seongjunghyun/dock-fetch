@@ -27,12 +27,22 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 
 let win: BrowserWindow | null
 
 function createWindow() {
+  if (process.platform === 'darwin') {
+    app.setName('DockFetch');
+  }
+
+  const iconPath = path.join(process.env.VITE_PUBLIC, 'icon.png')
+  if (process.platform === 'darwin') {
+    app.dock.setIcon(iconPath)
+  }
+
   win = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 1024,
     minHeight: 640,
-    icon: path.join(process.env.VITE_PUBLIC, 'electron-vite.svg'),
+    icon: iconPath,
+    title: 'DockFetch',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),

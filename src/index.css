@@ -5,11 +5,13 @@
 
   color-scheme: dark;
   --bg-primary: #0f1115;
+  --bg-primary-rgb: 15, 17, 21;
   --bg-secondary: #1a1d24;
   --bg-tertiary: #232730;
   --text-primary: #ffffff;
   --text-secondary: #a1a1aa;
   --accent-primary: #3b82f6;
+  --accent-primary-rgb: 59, 130, 246;
   --accent-secondary: #60a5fa;
   --accent-glow: rgba(59, 130, 246, 0.4);
   --border-color: rgba(255, 255, 255, 0.08);
@@ -28,11 +30,13 @@
 .light {
   color-scheme: light;
   --bg-primary: #f8fafc;
+  --bg-primary-rgb: 248, 250, 252;
   --bg-secondary: #ffffff;
   --bg-tertiary: #f1f5f9;
   --text-primary: #0f172a;
   --text-secondary: #64748b;
   --accent-primary: #2563eb;
+  --accent-primary-rgb: 37, 99, 235;
   --accent-secondary: #3b82f6;
   --accent-glow: rgba(37, 99, 235, 0.3);
   --border-color: rgba(0, 0, 0, 0.08);
@@ -44,6 +48,25 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(160, 160, 160, 0.3);
+  border-radius: var(--radius-lg);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(160, 160, 160, 0.5);
 }
 
 body {
@@ -162,7 +185,7 @@ input {
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: clip;
   position: relative;
 }
 
@@ -247,7 +270,6 @@ input {
   flex-direction: column;
   gap: 0.75rem;
   position: relative;
-  overflow: hidden;
 }
 
 .image-card::before {
@@ -331,19 +353,17 @@ input {
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 40;
-  background-color: rgba(var(--bg-primary-rgb), 0.95);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  z-index: 100;
+  background-color: rgba(var(--bg-primary-rgb), 0.3);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
   overflow-y: auto;
   border-top: 1px solid var(--border-color);
   animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .search-results-overlay .content-area {
-  max-width: 1200px;
   width: 100%;
-  margin: 0 auto;
 }
 
 .modal-close {
@@ -617,4 +637,12 @@ select:focus {
     transform: translateY(0);
     opacity: 1;
   }
+}
+
+.custom-dropdown-list {
+  padding: 0 !important;
+}
+
+.custom-dropdown-list::-webkit-scrollbar-track {
+  margin: 0.5rem 0;
 }

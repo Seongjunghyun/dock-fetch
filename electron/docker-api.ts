@@ -43,6 +43,19 @@ export async function getAuthToken(repo: string): Promise<string> {
 
 export async function getTags(repo: string, token: string): Promise<string[]> {
     const repository = repo.includes('/') ? repo : `library/${repo}`;
+
+    // Attempt Docker Hub API first for reliable "latest" and "recent" sorting on massive repos
+    try {
+        const hubRes = await axios.get(`${HUB_API}/repositories/${repository}/tags/`, {
+            params: { page_size: 100, ordering: 'last_updated' }
+        });
+        if (hubRes.data && hubRes.data.results) {
+            return hubRes.data.results.map((t: any) => t.name);
+        }
+    } catch (e: any) {
+        console.warn(`Docker Hub API tags fetch failed: ${e.message}. Falling back to Registry API...`);
+    }
+
     try {
         const res = await axios.get(`${REGISTRY_URL}/${repository}/tags/list`, {
             headers: { Authorization: `Bearer ${token}` },

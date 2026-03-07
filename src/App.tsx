@@ -108,7 +108,7 @@ const DockFetchLogo = ({ size = 28 }: { size?: number }) => (
         <stop offset="100%" stopColor="#06b6d4" />
       </linearGradient>
       <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-        <feGaussianBlur stdDeviation="2" result="blur" />
+        <feGaussianBlur stdDeviation="0.5" result="blur" />
         <feComposite in="SourceGraphic" in2="blur" operator="over" />
       </filter>
     </defs>
@@ -155,8 +155,19 @@ function App() {
         setIsSearchFocused(false)
       }
     }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsSearchFocused(false)
+        setSearchQuery('')
+        setSelectedImage(null)
+      }
+    }
     document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
   }, [])
 
   const [selectedImage, setSelectedImage] = useState<any | null>(null)
@@ -214,6 +225,27 @@ function App() {
   useEffect(() => {
     fetchLocalImages(true)
   }, [])
+
+  const [isTagDropdownOpen, setIsTagDropdownOpen] = useState(false)
+  const [tagSearchMode, setTagSearchMode] = useState(false)
+  const [tagSearch, setTagSearch] = useState('')
+  const [isPlatformDropdownOpen, setIsPlatformDropdownOpen] = useState(false)
+
+  // Handle click outside to close tag/platform dropdown/search
+  useEffect(() => {
+    const handleGlobalClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.tag-select-container')) {
+        setIsTagDropdownOpen(false);
+        setTagSearchMode(false);
+      }
+      if (!target.closest('.platform-select-container')) {
+        setIsPlatformDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleGlobalClick);
+    return () => document.removeEventListener('mousedown', handleGlobalClick);
+  }, []);
 
   useEffect(() => {
     setSelectedImage(null)
@@ -405,6 +437,9 @@ function App() {
 
   const handleTagChange = async (tag: string, repo: string) => {
     setSelectedTag(tag)
+    setIsTagDropdownOpen(false)
+    setTagSearchMode(false)
+    setTagSearch('')
     setPlatforms([])
     setSelectedDigest('')
     setIsFetchingMetadata(true)
@@ -677,6 +712,16 @@ function App() {
               </div>
             ))}
           </nav>
+          <div style={{
+            marginTop: 'auto',
+            padding: '1rem',
+            textAlign: 'center',
+            color: 'var(--text-secondary)',
+            fontSize: '0.8rem',
+            fontWeight: 500
+          }}>
+            v0.4.0
+          </div>
         </aside>
 
         <main className="main-content">
@@ -703,14 +748,14 @@ function App() {
               <div className="search-results-overlay">
 
                 <div className="content-area">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                    <h2 className="page-title">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '1.5rem' }}>
+                    <h2 className="page-title" style={{ marginBottom: 0 }}>
                       {searchQuery.length > 0
                         ? (searchQuery.length > 2 ? `Search Results for "${searchQuery}"` : 'Docker registry viewer')
                         : 'Recent'}
                     </h2>
                     {searchQuery.length === 0 && recentSearches.length > 0 && (
-                      <button style={{ background: 'transparent', color: 'var(--text-secondary)', border: 'none', cursor: 'pointer', fontSize: '0.9rem', padding: 0 }} onClick={() => setRecentSearches([])}>
+                      <button style={{ background: 'transparent', color: 'var(--text-secondary)', border: 'none', cursor: 'pointer', fontSize: '0.9rem', padding: 0, flexShrink: 0 }} onClick={() => setRecentSearches([])}>
                         Clear
                       </button>
                     )}
@@ -765,7 +810,8 @@ function App() {
                           style={{
                             cursor: selectedImage?.repo_name === img.repo_name ? 'default' : 'pointer',
                             border: selectedImage?.repo_name === img.repo_name ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
-                            boxShadow: selectedImage?.repo_name === img.repo_name ? '0 0 15px rgba(var(--accent-primary-rgb), 0.3)' : 'none'
+                            boxShadow: selectedImage?.repo_name === img.repo_name ? '0 0 15px rgba(var(--accent-primary-rgb), 0.3)' : 'none',
+                            zIndex: selectedImage?.repo_name === img.repo_name ? 50 : 1
                           }}
                         >
                           <div className="card-header">
@@ -830,36 +876,172 @@ function App() {
                                   <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '1rem' }}>
                                     <div className="control-group" style={{ marginBottom: 0, minWidth: 0 }}>
                                       <label className="control-label" style={{ fontSize: '0.75rem' }}>Tag / Version</label>
-                                      <div className="select-wrapper">
-                                        <select
-                                          value={selectedTag}
-                                          onChange={(e) => handleTagChange(e.target.value, img.repo_name)}
-                                          disabled={!!downloadProgress}
-                                          style={{ textOverflow: 'ellipsis', paddingRight: '2rem' }}
-                                        >
-                                          {tags.map(t => (
-                                            <option key={t} value={t}>{t}</option>
-                                          ))}
-                                        </select>
-                                        <ChevronDown className="select-arrow" size={16} />
+
+                                      <div className="tag-select-container" style={{ position: 'relative' }}>
+                                        {tagSearchMode ? (
+                                          <input
+                                            type="text"
+                                            className="text-input"
+                                            style={{ paddingRight: '2rem' }}
+                                            placeholder="Search tags..."
+                                            value={tagSearch}
+                                            onChange={(e) => setTagSearch(e.target.value)}
+                                            autoFocus
+                                            onBlur={() => {
+                                              setTimeout(() => setTagSearchMode(false), 200)
+                                            }}
+                                          />
+                                        ) : (
+                                          <div className="select-wrapper">
+                                            <div
+                                              className="custom-select-trigger"
+                                              onClick={(e) => {
+                                                if (downloadProgress) return;
+                                                if (isTagDropdownOpen) {
+                                                  e.preventDefault();
+                                                  setTagSearchMode(true);
+                                                }
+                                                setIsTagDropdownOpen(!isTagDropdownOpen);
+                                              }}
+                                              style={{
+                                                backgroundColor: 'var(--bg-secondary)',
+                                                border: '1px solid var(--border-color)',
+                                                borderRadius: 'var(--radius-md)',
+                                                padding: '0.75rem 1rem',
+                                                paddingRight: '2.5rem',
+                                                textOverflow: 'ellipsis',
+                                                whiteSpace: 'nowrap',
+                                                overflow: 'hidden',
+                                                cursor: downloadProgress ? 'not-allowed' : 'pointer',
+                                                color: downloadProgress ? 'var(--text-secondary)' : 'var(--text-primary)'
+                                              }}
+                                            >
+                                              {selectedTag || 'Select Tag'}
+                                            </div>
+                                            <ChevronDown className="select-arrow" size={16} />
+                                          </div>
+                                        )}
+                                        {isTagDropdownOpen && !tagSearchMode && (
+                                          <ul
+                                            className="custom-dropdown-list"
+                                            style={{
+                                              position: 'absolute',
+                                              top: '100%',
+                                              left: 0,
+                                              right: 0,
+                                              maxHeight: '250px',
+                                              overflowY: 'auto',
+                                              backgroundColor: 'var(--bg-secondary)',
+                                              border: '1px solid var(--border-color)',
+                                              borderRadius: 'var(--radius-md)',
+                                              boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                                              zIndex: 100,
+                                              marginTop: '4px',
+                                              listStyle: 'none',
+                                              padding: '0.5rem 0'
+                                            }}
+                                          >
+                                            {tags.filter(t => t.toLowerCase().includes(tagSearch.toLowerCase())).map(t => (
+                                              <li
+                                                key={t}
+                                                style={{
+                                                  padding: '0.5rem 1rem',
+                                                  cursor: 'pointer',
+                                                  backgroundColor: selectedTag === t ? 'var(--accent-primary)' : 'transparent',
+                                                  color: selectedTag === t ? 'white' : 'inherit'
+                                                }}
+                                                onClick={() => {
+                                                  handleTagChange(t, img.repo_name);
+                                                }}
+                                                onMouseEnter={(e) => { if (selectedTag !== t) e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)' }}
+                                                onMouseLeave={(e) => { if (selectedTag !== t) e.currentTarget.style.backgroundColor = 'transparent' }}
+                                              >
+                                                {t}
+                                              </li>
+                                            ))}
+                                            {tags.filter(t => t.toLowerCase().includes(tagSearch.toLowerCase())).length === 0 && (
+                                              <li style={{ padding: '0.5rem 1rem', color: 'var(--text-secondary)' }}>No tags found</li>
+                                            )}
+                                          </ul>
+                                        )}
                                       </div>
                                     </div>
-                                    <div className="control-group" style={{ marginBottom: 0, minWidth: 0 }}>
+                                    <div className="control-group" style={{ marginBottom: 0, minWidth: 0, zIndex: 0 }}>
                                       <label className="control-label" style={{ fontSize: '0.75rem' }}>Platform</label>
-                                      <div className="select-wrapper">
-                                        <select
-                                          value={selectedDigest}
-                                          onChange={(e) => setSelectedDigest(e.target.value)}
-                                          disabled={!!downloadProgress || platforms.length === 0}
-                                          style={{ textOverflow: 'ellipsis', paddingRight: '2rem' }}
-                                        >
-                                          {platforms.map(p => (
-                                            <option key={p.digest} value={p.digest}>
-                                              {p.os}/{p.architecture} {p.variant ? `(${p.variant})` : ''}
-                                            </option>
-                                          ))}
-                                        </select>
-                                        <ChevronDown className="select-arrow" size={16} />
+                                      <div className="platform-select-container" style={{ position: 'relative' }}>
+                                        <div className="select-wrapper">
+                                          <div
+                                            className="custom-select-trigger"
+                                            onClick={(e) => {
+                                              if (downloadProgress || platforms.length === 0) return;
+                                              setIsPlatformDropdownOpen(!isPlatformDropdownOpen);
+                                            }}
+                                            style={{
+                                              backgroundColor: 'var(--bg-secondary)',
+                                              border: '1px solid var(--border-color)',
+                                              borderRadius: 'var(--radius-md)',
+                                              padding: '0.75rem 1rem',
+                                              paddingRight: '2.5rem',
+                                              textOverflow: 'ellipsis',
+                                              whiteSpace: 'nowrap',
+                                              overflow: 'hidden',
+                                              cursor: (downloadProgress || platforms.length === 0) ? 'not-allowed' : 'pointer',
+                                              color: (downloadProgress || platforms.length === 0) ? 'var(--text-secondary)' : 'var(--text-primary)'
+                                            }}
+                                          >
+                                            {platforms.length > 0 && selectedDigest
+                                              ? (() => {
+                                                const p = platforms.find(pl => pl.digest === selectedDigest);
+                                                return p ? `${p.os}/${p.architecture} ${p.variant ? `(${p.variant})` : ''}` : 'Select Platform';
+                                              })()
+                                              : 'Select Platform'}
+                                          </div>
+                                          <ChevronDown className="select-arrow" size={16} />
+                                        </div>
+                                        {isPlatformDropdownOpen && (
+                                          <ul
+                                            className="custom-dropdown-list"
+                                            style={{
+                                              position: 'absolute',
+                                              top: '100%',
+                                              left: 0,
+                                              right: 0,
+                                              maxHeight: '250px',
+                                              overflowY: 'auto',
+                                              backgroundColor: 'var(--bg-secondary)',
+                                              border: '1px solid var(--border-color)',
+                                              borderRadius: 'var(--radius-md)',
+                                              boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                                              zIndex: 100,
+                                              marginTop: '4px',
+                                              listStyle: 'none',
+                                              padding: '0.5rem 0'
+                                            }}
+                                          >
+                                            {platforms.map(p => {
+                                              const platformLabel = `${p.os}/${p.architecture} ${p.variant ? `(${p.variant})` : ''}`;
+                                              return (
+                                                <li
+                                                  key={p.digest}
+                                                  style={{
+                                                    padding: '0.5rem 1rem',
+                                                    cursor: 'pointer',
+                                                    backgroundColor: selectedDigest === p.digest ? 'var(--accent-primary)' : 'transparent',
+                                                    color: selectedDigest === p.digest ? 'white' : 'inherit'
+                                                  }}
+                                                  onClick={() => {
+                                                    setSelectedDigest(p.digest);
+                                                    setIsPlatformDropdownOpen(false);
+                                                  }}
+                                                  onMouseEnter={(e) => { if (selectedDigest !== p.digest) e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)' }}
+                                                  onMouseLeave={(e) => { if (selectedDigest !== p.digest) e.currentTarget.style.backgroundColor = 'transparent' }}
+                                                >
+                                                  {platformLabel}
+                                                </li>
+                                              );
+                                            })}
+                                          </ul>
+                                        )}
                                       </div>
                                     </div>
                                   </div>
@@ -1013,7 +1195,8 @@ function App() {
                         style={{
                           cursor: selectedImage?.repo_name === img.repo_name ? 'default' : 'pointer',
                           border: selectedImage?.repo_name === img.repo_name ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
-                          boxShadow: selectedImage?.repo_name === img.repo_name ? '0 0 15px rgba(var(--accent-primary-rgb), 0.3)' : 'none'
+                          boxShadow: selectedImage?.repo_name === img.repo_name ? '0 0 15px rgba(var(--accent-primary-rgb), 0.3)' : 'none',
+                          zIndex: selectedImage?.repo_name === img.repo_name ? 50 : 1
                         }}
                       >
                         <div className="card-header">
@@ -1061,36 +1244,172 @@ function App() {
                                 <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '1rem' }}>
                                   <div className="control-group" style={{ marginBottom: 0, minWidth: 0 }}>
                                     <label className="control-label" style={{ fontSize: '0.75rem' }}>Tag / Version</label>
-                                    <div className="select-wrapper">
-                                      <select
-                                        value={selectedTag}
-                                        onChange={(e) => handleTagChange(e.target.value, img.repo_name)}
-                                        disabled={!!downloadProgress}
-                                        style={{ textOverflow: 'ellipsis', paddingRight: '2rem' }}
-                                      >
-                                        {tags.map(t => (
-                                          <option key={t} value={t}>{t}</option>
-                                        ))}
-                                      </select>
-                                      <ChevronDown className="select-arrow" size={16} />
+
+                                    <div className="tag-select-container" style={{ position: 'relative' }}>
+                                      {tagSearchMode ? (
+                                        <input
+                                          type="text"
+                                          className="text-input"
+                                          style={{ paddingRight: '2rem' }}
+                                          placeholder="Search tags..."
+                                          value={tagSearch}
+                                          onChange={(e) => setTagSearch(e.target.value)}
+                                          autoFocus
+                                          onBlur={() => {
+                                            setTimeout(() => setTagSearchMode(false), 200)
+                                          }}
+                                        />
+                                      ) : (
+                                        <div className="select-wrapper">
+                                          <div
+                                            className="custom-select-trigger"
+                                            onClick={(e) => {
+                                              if (downloadProgress) return;
+                                              if (isTagDropdownOpen) {
+                                                e.preventDefault();
+                                                setTagSearchMode(true);
+                                              }
+                                              setIsTagDropdownOpen(!isTagDropdownOpen);
+                                            }}
+                                            style={{
+                                              backgroundColor: 'var(--bg-secondary)',
+                                              border: '1px solid var(--border-color)',
+                                              borderRadius: 'var(--radius-md)',
+                                              padding: '0.75rem 1rem',
+                                              paddingRight: '2.5rem',
+                                              textOverflow: 'ellipsis',
+                                              whiteSpace: 'nowrap',
+                                              overflow: 'hidden',
+                                              cursor: downloadProgress ? 'not-allowed' : 'pointer',
+                                              color: downloadProgress ? 'var(--text-secondary)' : 'var(--text-primary)'
+                                            }}
+                                          >
+                                            {selectedTag || 'Select Tag'}
+                                          </div>
+                                          <ChevronDown className="select-arrow" size={16} />
+                                        </div>
+                                      )}
+                                      {isTagDropdownOpen && !tagSearchMode && (
+                                        <ul
+                                          className="custom-dropdown-list"
+                                          style={{
+                                            position: 'absolute',
+                                            top: '100%',
+                                            left: 0,
+                                            right: 0,
+                                            maxHeight: '250px',
+                                            overflowY: 'auto',
+                                            backgroundColor: 'var(--bg-secondary)',
+                                            border: '1px solid var(--border-color)',
+                                            borderRadius: 'var(--radius-md)',
+                                            boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                                            zIndex: 100,
+                                            marginTop: '4px',
+                                            listStyle: 'none',
+                                            padding: '0.5rem 0'
+                                          }}
+                                        >
+                                          {tags.filter(t => t.toLowerCase().includes(tagSearch.toLowerCase())).map(t => (
+                                            <li
+                                              key={t}
+                                              style={{
+                                                padding: '0.5rem 1rem',
+                                                cursor: 'pointer',
+                                                backgroundColor: selectedTag === t ? 'var(--accent-primary)' : 'transparent',
+                                                color: selectedTag === t ? 'white' : 'inherit'
+                                              }}
+                                              onClick={() => {
+                                                handleTagChange(t, img.repo_name);
+                                              }}
+                                              onMouseEnter={(e) => { if (selectedTag !== t) e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)' }}
+                                              onMouseLeave={(e) => { if (selectedTag !== t) e.currentTarget.style.backgroundColor = 'transparent' }}
+                                            >
+                                              {t}
+                                            </li>
+                                          ))}
+                                          {tags.filter(t => t.toLowerCase().includes(tagSearch.toLowerCase())).length === 0 && (
+                                            <li style={{ padding: '0.5rem 1rem', color: 'var(--text-secondary)' }}>No tags found</li>
+                                          )}
+                                        </ul>
+                                      )}
                                     </div>
                                   </div>
-                                  <div className="control-group" style={{ marginBottom: 0, minWidth: 0 }}>
+                                  <div className="control-group" style={{ marginBottom: 0, minWidth: 0, zIndex: 0 }}>
                                     <label className="control-label" style={{ fontSize: '0.75rem' }}>Platform</label>
-                                    <div className="select-wrapper">
-                                      <select
-                                        value={selectedDigest}
-                                        onChange={(e) => setSelectedDigest(e.target.value)}
-                                        disabled={!!downloadProgress || platforms.length === 0}
-                                        style={{ textOverflow: 'ellipsis', paddingRight: '2rem' }}
-                                      >
-                                        {platforms.map(p => (
-                                          <option key={p.digest} value={p.digest}>
-                                            {p.os}/{p.architecture} {p.variant ? `(${p.variant})` : ''}
-                                          </option>
-                                        ))}
-                                      </select>
-                                      <ChevronDown className="select-arrow" size={16} />
+                                    <div className="platform-select-container" style={{ position: 'relative' }}>
+                                      <div className="select-wrapper">
+                                        <div
+                                          className="custom-select-trigger"
+                                          onClick={(e) => {
+                                            if (downloadProgress || platforms.length === 0) return;
+                                            setIsPlatformDropdownOpen(!isPlatformDropdownOpen);
+                                          }}
+                                          style={{
+                                            backgroundColor: 'var(--bg-secondary)',
+                                            border: '1px solid var(--border-color)',
+                                            borderRadius: 'var(--radius-md)',
+                                            padding: '0.75rem 1rem',
+                                            paddingRight: '2.5rem',
+                                            textOverflow: 'ellipsis',
+                                            whiteSpace: 'nowrap',
+                                            overflow: 'hidden',
+                                            cursor: (downloadProgress || platforms.length === 0) ? 'not-allowed' : 'pointer',
+                                            color: (downloadProgress || platforms.length === 0) ? 'var(--text-secondary)' : 'var(--text-primary)'
+                                          }}
+                                        >
+                                          {platforms.length > 0 && selectedDigest
+                                            ? (() => {
+                                              const p = platforms.find(pl => pl.digest === selectedDigest);
+                                              return p ? `${p.os}/${p.architecture} ${p.variant ? `(${p.variant})` : ''}` : 'Select Platform';
+                                            })()
+                                            : 'Select Platform'}
+                                        </div>
+                                        <ChevronDown className="select-arrow" size={16} />
+                                      </div>
+                                      {isPlatformDropdownOpen && (
+                                        <ul
+                                          className="custom-dropdown-list"
+                                          style={{
+                                            position: 'absolute',
+                                            top: '100%',
+                                            left: 0,
+                                            right: 0,
+                                            maxHeight: '250px',
+                                            overflowY: 'auto',
+                                            backgroundColor: 'var(--bg-secondary)',
+                                            border: '1px solid var(--border-color)',
+                                            borderRadius: 'var(--radius-md)',
+                                            boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                                            zIndex: 100,
+                                            marginTop: '4px',
+                                            listStyle: 'none',
+                                            padding: '0.5rem 0'
+                                          }}
+                                        >
+                                          {platforms.map(p => {
+                                            const platformLabel = `${p.os}/${p.architecture} ${p.variant ? `(${p.variant})` : ''}`;
+                                            return (
+                                              <li
+                                                key={p.digest}
+                                                style={{
+                                                  padding: '0.5rem 1rem',
+                                                  cursor: 'pointer',
+                                                  backgroundColor: selectedDigest === p.digest ? 'var(--accent-primary)' : 'transparent',
+                                                  color: selectedDigest === p.digest ? 'white' : 'inherit'
+                                                }}
+                                                onClick={() => {
+                                                  setSelectedDigest(p.digest);
+                                                  setIsPlatformDropdownOpen(false);
+                                                }}
+                                                onMouseEnter={(e) => { if (selectedDigest !== p.digest) e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)' }}
+                                                onMouseLeave={(e) => { if (selectedDigest !== p.digest) e.currentTarget.style.backgroundColor = 'transparent' }}
+                                              >
+                                                {platformLabel}
+                                              </li>
+                                            );
+                                          })}
+                                        </ul>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
@@ -1194,7 +1513,8 @@ function App() {
                               </div>
                             )}
                           </div>
-                        )}
+                        )
+                        }
                       </div>
                     )
                   })}
@@ -1227,8 +1547,8 @@ function App() {
                   {directoryTars.length === 0 ? (
                     <p style={{ color: 'var(--text-secondary)' }}>No .tar images found in your default download directory.</p>
                   ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', padding: '0' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', padding: '0' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                           <label style={{ marginLeft: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem', color: selectedStorageFiles.length > 0 ? 'white' : 'var(--text-primary)', userSelect: 'none', whiteSpace: 'nowrap' }}>
                             <input
@@ -1336,7 +1656,7 @@ function App() {
                 <p style={{ color: 'var(--text-secondary)' }}>No local images found or Docker is not running.</p>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', padding: '0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', padding: '0' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                       <label style={{ marginLeft: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem', color: selectedLocalImages.length > 0 ? 'white' : 'var(--text-primary)', userSelect: 'none', whiteSpace: 'nowrap' }}>
                         <input
@@ -1493,7 +1813,7 @@ function App() {
             </div>
           )}
         </main>
-      </div>
+      </div >
 
       {toast && (
         <div className="toast-container">
@@ -1512,8 +1832,9 @@ function App() {
             </button>
           </div>
         </div>
-      )}
-    </div>
+      )
+      }
+    </div >
   )
 }
 

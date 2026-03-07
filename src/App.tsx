@@ -972,7 +972,7 @@ function App() {
                                         <div className="select-wrapper">
                                           <div
                                             className="custom-select-trigger"
-                                            onClick={(e) => {
+                                            onClick={() => {
                                               if (downloadProgress || platforms.length === 0) return;
                                               setIsPlatformDropdownOpen(!isPlatformDropdownOpen);
                                             }}
@@ -1340,7 +1340,7 @@ function App() {
                                       <div className="select-wrapper">
                                         <div
                                           className="custom-select-trigger"
-                                          onClick={(e) => {
+                                          onClick={() => {
                                             if (downloadProgress || platforms.length === 0) return;
                                             setIsPlatformDropdownOpen(!isPlatformDropdownOpen);
                                           }}

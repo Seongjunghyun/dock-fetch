@@ -720,7 +720,7 @@ function App() {
             fontSize: '0.8rem',
             fontWeight: 500
           }}>
-            v0.4.0
+            v0.4.1
           </div>
         </aside>
 
@@ -1531,7 +1531,7 @@ function App() {
                     // @ts-ignore
                     window.ipcRenderer.invoke('open-path', downloadPath)
                   }}>
-                    <FolderOpen size={16} /> Open in Finder
+                    <FolderOpen size={16} /> Open Folder
                   </button>
                 )}
               </div>

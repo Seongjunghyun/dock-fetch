@@ -157,7 +157,7 @@ ipcMain.handle('fetch-to-local-docker', async (event, repo: string, tag: string,
     event.sender.send('download-progress', { repo, tag, msg: 'Loading into Docker daemon...', percent: 100 })
 
     return new Promise((resolve, reject) => {
-      const env = { ...process.env, PATH: `${process.env.PATH}:/usr/local/bin:/opt/homebrew/bin` }
+      const env = getDockerEnv()
       exec(`docker load -i "${tempPath}"`, { env }, (error, stdout, stderr) => {
         // 3. Cleanup temp file
         try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath) } catch (e) { }
@@ -182,7 +182,7 @@ ipcMain.handle('fetch-to-local-docker', async (event, repo: string, tag: string,
 
 ipcMain.handle('load-local-image', async (_, targetPath: string) => {
   return new Promise((resolve, reject) => {
-    const env = { ...process.env, PATH: `${process.env.PATH}:/usr/local/bin:/opt/homebrew/bin` }
+    const env = getDockerEnv()
     exec(`docker load -i "${targetPath}"`, { env }, (error, stdout, stderr) => {
       if (error) {
         console.error('Docker load error:', error, stderr)
@@ -203,13 +203,41 @@ ipcMain.handle('select-directory', async () => {
 })
 
 ipcMain.handle('open-path', async (_, targetPath: string) => {
-  shell.showItemInFolder(targetPath)
+  const fs = await import('node:fs')
+  try {
+    const stats = fs.statSync(targetPath)
+    if (stats.isDirectory()) {
+      shell.openPath(targetPath)
+    } else {
+      shell.showItemInFolder(targetPath)
+    }
+  } catch (err) {
+    console.error('Error opening path:', err)
+    shell.showItemInFolder(targetPath) // Fallback
+  }
 })
+
+function getDockerEnv() {
+  const env = { ...process.env }
+  const extraPaths = [
+    '/usr/local/bin',
+    '/opt/homebrew/bin',
+    'C:\\Program Files\\Docker\\Docker\\resources\\bin',
+    'C:\\ProgramData\\DockerDesktop\\version-bin',
+    '/usr/bin' // for WSL
+  ]
+  
+  if (process.platform === 'win32') {
+    env.PATH = `${env.PATH};${extraPaths.join(';')}`
+  } else {
+    env.PATH = `${env.PATH}:${extraPaths.join(':')}`
+  }
+  return env
+}
 
 ipcMain.handle('get-local-images', async () => {
   return new Promise((resolve, _reject) => {
-    // macOS typically has docker in /usr/local/bin or /opt/homebrew/bin
-    const env = { ...process.env, PATH: `${process.env.PATH}:/usr/local/bin:/opt/homebrew/bin` }
+    const env = getDockerEnv()
 
     exec('docker images --format \'{"repo":"{{.Repository}}","tag":"{{.Tag}}","id":"{{.ID}}","size":"{{.Size}}","created":"{{.CreatedAt}}"}\'', { env }, (error, stdout, stderr) => {
       if (error) {
@@ -251,7 +279,7 @@ ipcMain.handle('save-local-image', async (_, repo: string, tag: string, id: stri
   }
 
   return new Promise((resolve, reject) => {
-    const env = { ...process.env, PATH: `${process.env.PATH}:/usr/local/bin:/opt/homebrew/bin` }
+    const env = getDockerEnv()
     const imageRef = (repo === '<none>' || tag === '<none>') ? id : `${repo}:${tag}`
 
     exec(`docker save -o "${targetPath}" "${imageRef}"`, { env }, (error, _stdout, stderr) => {
@@ -323,7 +351,7 @@ ipcMain.handle('open-external-link', async (_, url: string) => {
 // --- Image Management IPC ---
 ipcMain.handle('delete-local-image', async (_, imageId: string) => {
   return new Promise((resolve) => {
-    const env = { ...process.env, PATH: `${process.env.PATH}:/usr/local/bin:/opt/homebrew/bin` }
+    const env = getDockerEnv()
     exec(`docker rmi -f "${imageId}"`, { env }, (error, stdout, stderr) => {
       if (error) {
         console.error('Docker rmi error:', error, stderr)

@@ -356,20 +356,12 @@ function App() {
 
   // Listen to search input
   useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
-      if (searchQuery.length > 2) {
-        performSearch(searchQuery)
-      } else {
-        setImages([])
-        setSelectedImage(null)
-      }
-    }, 500)
-
-    if (searchQuery.length > 0) {
+    if (searchQuery.length > 2) {
+      performSearch(searchQuery)
+    } else {
+      setImages([])
       setSelectedImage(null)
     }
-
-    return () => clearTimeout(delayDebounceFn)
   }, [searchQuery])
 
   // Listen to IPC download progress
@@ -720,7 +712,7 @@ function App() {
             fontSize: '0.8rem',
             fontWeight: 500
           }}>
-            v0.4.1
+            v0.5.0
           </div>
         </aside>
 

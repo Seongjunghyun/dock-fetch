@@ -222,16 +222,21 @@ function getDockerEnv() {
   const extraPaths = [
     '/usr/local/bin',
     '/opt/homebrew/bin',
+    '/usr/bin',
+    '/bin',
+    '/usr/sbin',
+    '/sbin',
     'C:\\Program Files\\Docker\\Docker\\resources\\bin',
-    'C:\\ProgramData\\DockerDesktop\\version-bin',
-    '/usr/bin' // for WSL
+    'C:\\ProgramData\\DockerDesktop\\version-bin'
   ]
   
-  if (process.platform === 'win32') {
-    env.PATH = `${env.PATH};${extraPaths.join(';')}`
-  } else {
-    env.PATH = `${env.PATH}:${extraPaths.join(':')}`
-  }
+  const delimiter = process.platform === 'win32' ? ';' : ':'
+  const currentPath = env.PATH || ''
+  
+  // Ensure we don't have duplicates and add our extra paths
+  const allPaths = [...new Set([...extraPaths, ...currentPath.split(delimiter)])]
+  env.PATH = allPaths.filter(Boolean).join(delimiter)
+  
   return env
 }
 

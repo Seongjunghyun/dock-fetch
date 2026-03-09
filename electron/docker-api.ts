@@ -3,8 +3,6 @@ import fs from 'node:fs';
 import tar from 'tar-stream';
 
 const HUB_API = 'https://hub.docker.com/v2';
-const REGISTRY_URL = 'https://registry-1.docker.io/v2';
-const AUTH_URL = 'https://auth.docker.io/token';
 
 export interface ImageSearchResult {
     repo_name: string;
@@ -14,71 +12,111 @@ export interface ImageSearchResult {
 }
 
 export async function searchImages(query: string): Promise<ImageSearchResult[]> {
+    // 1. Always try Docker Hub search
+    let hubResults: ImageSearchResult[] = [];
     try {
         const res = await axios.get(`${HUB_API}/search/repositories/`, {
             params: { query },
         });
-        return res.data.results;
+        hubResults = res.data.results;
     } catch (error) {
-        console.error('Failed to search images:', error);
-        return [];
+        console.error('Failed to search Docker Hub:', error);
     }
+
+    // 2. If the query looks like a specific GHCR/Custom registry path, or no results in Hub
+    // We add a synthetic result for direct registry links
+    if (query.includes('.') && query.includes('/')) {
+        const isAlreadyInHub = hubResults.some(r => r.repo_name === query);
+        if (!isAlreadyInHub) {
+            hubResults.unshift({
+                repo_name: query,
+                short_description: `Direct registry image: ${query}`,
+                star_count: 0,
+                pull_count: 0
+            });
+        }
+    }
+
+    return hubResults;
+}
+
+function getRegistryInfo(repo: string) {
+    if (repo.startsWith('ghcr.io/')) {
+        return {
+            registry: 'https://ghcr.io',
+            authUrl: 'https://ghcr.io/token',
+            service: 'ghcr.io',
+            repository: repo.replace('ghcr.io/', '')
+        };
+    }
+    // Default to Docker Hub
+    return {
+        registry: 'https://registry-1.docker.io',
+        authUrl: 'https://auth.docker.io/token',
+        service: 'registry.docker.io',
+        repository: repo.includes('/') ? repo : `library/${repo}`
+    };
 }
 
 export async function getAuthToken(repo: string): Promise<string> {
-    const repository = repo.includes('/') ? repo : `library/${repo}`;
+    const info = getRegistryInfo(repo);
     try {
-        const res = await axios.get(AUTH_URL, {
+        const res = await axios.get(info.authUrl, {
             params: {
-                service: 'registry.docker.io',
-                scope: `repository:${repository}:pull`,
+                service: info.service,
+                scope: `repository:${info.repository}:pull`,
             },
         });
         return res.data.token;
     } catch (error) {
-        console.error(`Failed to get auth token for ${repository}:`, error);
-        throw error;
+        console.error(`Failed to get auth token for ${repo}:`, error);
+        // GHCR and some others allow public pull without token or with anonymous token
+        return '';
     }
 }
 
 export async function getTags(repo: string, token: string): Promise<string[]> {
-    const repository = repo.includes('/') ? repo : `library/${repo}`;
+    const info = getRegistryInfo(repo);
 
-    // Attempt Docker Hub API first for reliable "latest" and "recent" sorting on massive repos
-    try {
-        const hubRes = await axios.get(`${HUB_API}/repositories/${repository}/tags/`, {
-            params: { page_size: 100, ordering: 'last_updated' }
-        });
-        if (hubRes.data && hubRes.data.results) {
-            return hubRes.data.results.map((t: any) => t.name);
+    // If it's Docker Hub, try Hub API first for better sorting
+    if (info.service === 'registry.docker.io') {
+        try {
+            const hubRes = await axios.get(`${HUB_API}/repositories/${info.repository}/tags/`, {
+                params: { page_size: 100, ordering: 'last_updated' }
+            });
+            if (hubRes.data && hubRes.data.results) {
+                return hubRes.data.results.map((t: any) => t.name);
+            }
+        } catch (e: any) {
+            console.warn(`Docker Hub API tags fetch failed: ${e.message}. Falling back to Registry API...`);
         }
-    } catch (e: any) {
-        console.warn(`Docker Hub API tags fetch failed: ${e.message}. Falling back to Registry API...`);
     }
 
+    // Generic V2 Registry API
     try {
-        const res = await axios.get(`${REGISTRY_URL}/${repository}/tags/list`, {
-            headers: { Authorization: `Bearer ${token}` },
+        const res = await axios.get(`${info.registry}/v2/${info.repository}/tags/list`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         return res.data.tags || [];
     } catch (error) {
-        console.error(`Failed to get tags for ${repository}:`, error);
-        return [];
+        console.error(`Failed to get tags for ${repo}:`, error);
+        // For some GHCR images, they might require specific headers or are "hidden"
+        return ['latest']; // Fallback
     }
 }
 
 export async function getManifest(repo: string, tagOrDigest: string, token: string) {
-    const repository = repo.includes('/') ? repo : `library/${repo}`;
+    const info = getRegistryInfo(repo);
     try {
-        const res = await axios.get(`${REGISTRY_URL}/${repository}/manifests/${tagOrDigest}`, {
+        const res = await axios.get(`${info.registry}/v2/${info.repository}/manifests/${tagOrDigest}`, {
             headers: {
-                Authorization: `Bearer ${token}`,
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
                 Accept: 'application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json',
             },
         });
         return { data: res.data, headers: res.headers };
     } catch (error) {
-        console.error(`Failed to get manifest for ${repository}:${tagOrDigest}:`, error);
+        console.error(`Failed to get manifest for ${repo}:${tagOrDigest}:`, error);
         throw error;
     }
 }
@@ -87,13 +125,19 @@ export async function getAvailablePlatforms(repo: string, tag: string) {
     try {
         const token = await getAuthToken(repo);
         const manifestRes = await getManifest(repo, tag, token);
-        const manifests = manifestRes.data.manifests;
+        const manifest = manifestRes.data;
 
-        if (!manifests) {
-            return [{ os: 'linux', architecture: 'amd64', variant: '', digest: manifestRes.headers['docker-content-digest'] || '' }];
+        // Handle single manifest (no manifests list)
+        if (!manifest.manifests) {
+            return [{ 
+                os: manifest.platform?.os || 'linux', 
+                architecture: manifest.platform?.architecture || 'amd64', 
+                variant: manifest.platform?.variant || '', 
+                digest: manifestRes.headers['docker-content-digest'] || '' 
+            }];
         }
 
-        return manifests.map((m: any) => ({
+        return manifest.manifests.map((m: any) => ({
             os: m.platform.os,
             architecture: m.platform.architecture,
             variant: m.platform.variant || '',
@@ -114,15 +158,22 @@ export async function downloadImageAsTar(
     onProgress: (msg: string, percent: number) => void,
     signal?: AbortSignal
 ) {
-    const repository = repo.includes('/') ? repo : `library/${repo}`;
-
-    onProgress('Fetching architecture-specific manifest...', 0);
+    const info = getRegistryInfo(repo);
+    
+    onProgress('Fetching manifest...', 0);
     const targetManifestRes = await getManifest(repo, digest || tag, token);
     const manifest = targetManifestRes.data;
 
-    const configDigest = manifest.config.digest;
-    const layers = manifest.layers;
-    const totalSteps = layers.length + 3; // + config, + manifest, + write
+    // If it's an OCI index or manifest list, we should have the specific digest already
+    // but if not, we take the first one or the whole thing if it's a single manifest
+    const layers = manifest.layers || [];
+    const configDigest = manifest.config?.digest;
+    
+    if (!configDigest) {
+        throw new Error('Could not find image config in manifest');
+    }
+
+    const totalSteps = layers.length + 3; 
     let step = 0;
 
     const pack = tar.pack();
@@ -131,10 +182,10 @@ export async function downloadImageAsTar(
 
     // 1. Download Config
     step++;
-    onProgress(`Downloading image config (${configDigest.substring(7, 19)})...`, Math.round((step / totalSteps) * 100));
+    onProgress(`Downloading config...`, Math.round((step / totalSteps) * 100));
 
-    const configRes = await axios.get(`${REGISTRY_URL}/${repository}/blobs/${configDigest}`, {
-        headers: { Authorization: `Bearer ${token}` },
+    const configRes = await axios.get(`${info.registry}/v2/${info.repository}/blobs/${configDigest}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
         responseType: 'arraybuffer',
         signal
     });
@@ -149,8 +200,9 @@ export async function downloadImageAsTar(
     for (let i = 0; i < layers.length; i++) {
         const layer = layers[i];
         step++;
-        const layerRes = await axios.get(`${REGISTRY_URL}/${repository}/blobs/${layer.digest}`, {
-            headers: { Authorization: `Bearer ${token}` },
+        
+        const layerRes = await axios.get(`${info.registry}/v2/${info.repository}/blobs/${layer.digest}`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
             responseType: 'stream',
             signal
         });
@@ -159,16 +211,13 @@ export async function downloadImageAsTar(
         const layerFilename = `${layerDir}/layer.tar`;
         layerPaths.push(layerFilename);
 
-        // Add VERSION file for each layer
         pack.entry({ name: `${layerDir}/VERSION` }, '1.0');
-        // Add json metadata for each layer
         const layerJson = {
             id: layerDir,
             parent: i > 0 ? layers[i - 1].digest.split(':')[1] : undefined
         };
         pack.entry({ name: `${layerDir}/json` }, JSON.stringify(layerJson));
 
-        // Add the actual layer blob data
         const totalLayerSize = parseInt(layerRes.headers['content-length'] || layer.size, 10);
         let downloadedLayer = 0;
 
@@ -204,7 +253,7 @@ export async function downloadImageAsTar(
     // 4. Create repositories file
     const repositoriesJson = {
         [repo]: {
-            [tag]: layerPaths[layerPaths.length - 1].split('/')[0] // last layer ID
+            [tag]: layerPaths[layerPaths.length - 1].split('/')[0]
         }
     };
     pack.entry({ name: 'repositories' }, JSON.stringify(repositoriesJson));

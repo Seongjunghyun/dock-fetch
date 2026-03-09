@@ -13,9 +13,10 @@
   ],
   "mac": {
     "target": [
-      "dmg"
+      "dmg",
+      "zip"
     ],
-    "artifactName": "${productName}-Mac-${version}-Installer.${ext}"
+    "artifactName": "${productName}-Mac-${version}-${target}.${ext}"
   },
   "win": {
     "target": [
@@ -24,9 +25,15 @@
         "arch": [
           "x64"
         ]
+      },
+      {
+        "target": "portable",
+        "arch": [
+          "x64"
+        ]
       }
     ],
-    "artifactName": "${productName}-Windows-${version}-Setup.${ext}"
+    "artifactName": "${productName}-Windows-${version}-${target}.${ext}"
   },
   "nsis": {
     "oneClick": false,

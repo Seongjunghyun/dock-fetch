@@ -266,16 +266,18 @@ ipcMain.handle('get-local-images', async () => {
 ipcMain.handle('save-local-image', async (_, repo: string, tag: string, id: string, defaultPath: string | null) => {
   let targetPath = ''
 
+  const fileName = `${repo.replace(/\//g, '_')}_${tag.replace(/\//g, '_')}.tar`
+
   if (defaultPath) {
     const fs = await import('node:fs')
     if (!fs.existsSync(defaultPath)) {
       fs.mkdirSync(defaultPath, { recursive: true })
     }
-    targetPath = path.join(defaultPath, `${repo.replace(/\//g, '_')}_${tag.replace(/\//g, '_')}.tar`)
+    targetPath = path.join(defaultPath, fileName)
   } else {
     const { canceled, filePath } = await dialog.showSaveDialog({
       title: 'Export Local Docker Image',
-      defaultPath: `${repo.replace(/\//g, '_')}_${tag.replace(/\//g, '_')}.tar`,
+      defaultPath: fileName,
       filters: [{ name: 'Tarball', extensions: ['tar'] }]
     })
 
@@ -285,13 +287,19 @@ ipcMain.handle('save-local-image', async (_, repo: string, tag: string, id: stri
 
   return new Promise((resolve, reject) => {
     const env = getDockerEnv()
-    const imageRef = (repo === '<none>' || tag === '<none>') ? id : `${repo}:${tag}`
+    // CRITICAL: For images like python:3.11-slim-bookworm, repo is 'python' and tag is '3.11-slim-bookworm'
+    // If either is <none> (dangling), we MUST use the ID.
+    const imageRef = (repo === '<none>' || tag === '<none>' || !repo || !tag) ? id : `${repo}:${tag}`
+    
+    const command = `docker save -o "${targetPath}" "${imageRef}"`
+    console.log(`Executing export: ${command}`)
 
-    exec(`docker save -o "${targetPath}" "${imageRef}"`, { env }, (error, _stdout, stderr) => {
+    exec(command, { env }, (error, _stdout, stderr) => {
       if (error) {
         console.error('Docker save error:', error, stderr)
         reject(new Error(stderr || error.message))
       } else {
+        console.log('Export successful:', targetPath)
         resolve(targetPath)
       }
     })

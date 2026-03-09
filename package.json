@@ -1,7 +1,7 @@
 {
   "name": "dock-fetch",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0",
   "author": "Seongjunghyun <sh_980126@naver.com>",
   "description": "A standalone desktop app to manage Docker images",
   "type": "module",

@@ -25,7 +25,12 @@ export async function searchImages(query: string): Promise<ImageSearchResult[]> 
 
     // 2. If the query looks like a specific GHCR/Custom registry path, or no results in Hub
     // We add a synthetic result for direct registry links
-    if (query.includes('.') && query.includes('/')) {
+    // e.g. ghcr.io/modsetter/surfsense-backend
+    const parts = query.split('/');
+    const hasRegistry = parts.length >= 2 && parts[0].includes('.');
+    const hasPathAfterRegistry = parts.slice(1).join('/').length >= 2;
+
+    if (hasRegistry && hasPathAfterRegistry) {
         const isAlreadyInHub = hubResults.some(r => r.repo_name === query);
         if (!isAlreadyInHub) {
             hubResults.unshift({
